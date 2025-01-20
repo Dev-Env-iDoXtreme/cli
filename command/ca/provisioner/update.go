@@ -11,16 +11,19 @@ import (
 	"os"
 
 	"github.com/pkg/errors"
+	"github.com/urfave/cli"
+
 	"github.com/smallstep/certificates/ca"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/ui"
+
+	"github.com/smallstep/linkedca"
+	"go.step.sm/crypto/jose"
+	"go.step.sm/crypto/pemutil"
+
 	"github.com/smallstep/cli/flags"
 	"github.com/smallstep/cli/internal/sliceutil"
 	"github.com/smallstep/cli/utils"
-	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/ui"
-	"go.step.sm/crypto/jose"
-	"go.step.sm/crypto/pemutil"
-	"go.step.sm/linkedca"
 )
 
 func updateCommand() cli.Command {
@@ -33,6 +36,8 @@ func updateCommand() cli.Command {
 [**--admin-cert**=<file>] [**--admin-key**=<file>] [**--admin-subject**=<subject>]
 [**--admin-provisioner**=<name>] [**--admin-password-file**=<file>]
 [**--ca-url**=<uri>] [**--root**=<file>] [**--context**=<name>] [**--ca-config**=<file>]
+[**--x509-template**=<file>] [**--x509-template-data**=<file>] [**--ssh-template**=<file>]
+[**--ssh-template-data**=<file>]
 
 ACME
 
@@ -42,6 +47,7 @@ ACME
 [**--attestation-roots**=<file>] [**--admin-cert**=<file>] [**--admin-key**=<file>]
 [**--admin-subject**=<subject>] [**--admin-provisioner**=<name>] [**--admin-password-file**=<file>]
 [**--ca-url**=<uri>] [**--root**=<file>] [**--context**=<name>] [**--ca-config**=<file>]
+[**--x509-template**=<file>] [**--x509-template-data**=<file>]
 
 OIDC
 
@@ -51,9 +57,13 @@ OIDC
 [**--domain**=<domain>] [**--remove-domain**=<domain>]
 [**--group**=<group>] [**--remove-group**=<group>]
 [**--admin**=<email>]... [**--remove-admin**=<email>]...
+[**--scope**=<scope>] [**--remove-scope**=<scope>]
+[**--auth-param**=<auth-param>] [**--remove-auth-param**=<auth-param>]
 [**--admin-cert**=<file>] [**--admin-key**=<file>]
 [**--admin-subject**=<subject>] [**--admin-provisioner**=<name>] [**--admin-password-file**=<file>]
 [**--ca-url**=<uri>] [**--root**=<file>] [**--context**=<name>] [**--ca-config**=<file>]
+[**--x509-template**=<file>] [**--x509-template-data**=<file>] [**--ssh-template**=<file>]
+[**--ssh-template-data**=<file>]
 
 X5C
 
@@ -61,6 +71,8 @@ X5C
 [**--admin-cert**=<file>] [**--admin-key**=<file>]
 [**--admin-subject**=<subject>] [**--admin-provisioner**=<name>] [**--admin-password-file**=<file>]
 [**--ca-url**=<uri>] [**--root**=<file>] [**--context**=<name>] [**--ca-config**=<file>]
+[**--x509-template**=<file>] [**--x509-template-data**=<file>] [**--ssh-template**=<file>]
+[**--ssh-template-data**=<file>]
 
 K8SSA (Kubernetes Service Account)
 
@@ -68,6 +80,7 @@ K8SSA (Kubernetes Service Account)
 [**--admin-cert**=<file>] [**--admin-key**=<file>]
 [**--admin-subject**=<subject>] [**--admin-provisioner**=<name>] [**--admin-password-file**=<file>]
 [**--ca-url**=<uri>] [**--root**=<file>] [**--context**=<name>] [**--ca-config**=<file>]
+[**--x509-template**=<file>] [**--x509-template-data**=<file>]
 
 IID (AWS/GCP/Azure)
 
@@ -79,17 +92,24 @@ IID (AWS/GCP/Azure)
 [**--azure-audience**=<name>] [**--azure-subscription-id**=<id>]
 [**--azure-object-id**=<id>] [**--instance-age**=<duration>]
 [**--disable-custom-sans**] [**--disable-trust-on-first-use**]
+[**--disable-ssh-ca-user**] [**--disable-ssh-ca-host**]
 [**--admin-cert**=<file>] [**--admin-key**=<file>]
 [**--admin-subject**=<subject>] [**--admin-provisioner**=<name>] [**--admin-password-file**=<file>]
 [**--ca-url**=<uri>] [**--root**=<file>] [**--context**=<name>] [**--ca-config**=<file>]
+[**--x509-template**=<file>] [**--x509-template-data**=<file>] [**--ssh-template**=<file>]
+[**--ssh-template-data**=<file>]
 
 SCEP
 
 **step ca provisioner update** <name> [**--force-cn**] [**--challenge**=<challenge>]
-[**--capabilities**=<capabilities>] [**--include-root**] [**--minimum-public-key-length**=<length>]
-[**--encryption-algorithm-identifier**=<id>][**--admin-cert**=<file>] [**--admin-key**=<file>]
-[**--admin-subject**=<subject>] [**--admin-provisioner**=<name>] [**--admin-password-file**=<file>]
-[**--ca-url**=<uri>] [**--root**=<file>] [**--context**=<name>] [**--ca-config**=<file>]`,
+[**--capabilities**=<capabilities>] [**--include-root**] [**--exclude-intermediate**]
+[**--minimum-public-key-length**=<length>] [**--encryption-algorithm-identifier**=<id>]
+[**--scep-decrypter-certificate-file**=<file>] [**--scep-decrypter-key-file**=<file>]
+[**--scep-decrypter-key-uri**=<uri>] [**--scep-decrypter-key-password-file**=<file>]
+[**--admin-cert**=<file>] [**--admin-key**=<file>] [**--admin-subject**=<subject>]
+[**--admin-provisioner**=<name>] [**--admin-password-file**=<file>]
+[**--ca-url**=<uri>] [**--root**=<file>] [**--context**=<name>] [**--ca-config**=<file>]
+[**--x509-template**=<file>] [**--x509-template-data**=<file>]`,
 		Flags: []cli.Flag{
 			nameFlag,
 			pubKeyFlag,
@@ -109,6 +129,9 @@ SCEP
 			oidcRemoveDomainFlag,
 			oidcGroupFlag,
 			oidcTenantIDFlag,
+			oidcScopeFlag,
+			oidcRemoveScopeFlag,
+			oidcAuthParamFlag,
 
 			// X5C Root Flag
 			x5cRootsFlag,
@@ -128,8 +151,13 @@ SCEP
 			// SCEP flags
 			scepCapabilitiesFlag,
 			scepIncludeRootFlag,
+			scepExcludeIntermediateFlag,
 			scepMinimumPublicKeyLengthFlag,
 			scepEncryptionAlgorithmIdentifierFlag,
+			scepDecrypterCertFileFlag,
+			scepDecrypterKeyFileFlag,
+			scepDecrypterKeyURIFlag,
+			scepDecrypterKeyPasswordFileFlag,
 
 			// Cloud provisioner flags
 			awsAccountFlag,
@@ -149,6 +177,8 @@ SCEP
 			instanceAgeFlag,
 			disableCustomSANsFlag,
 			disableTOFUFlag,
+			disableSSHCAUserFlag,
+			disableSSHCAHostFlag,
 
 			// Claims
 			x509TemplateFlag,
@@ -166,6 +196,7 @@ SCEP
 			sshHostDefaultDurFlag,
 			disableRenewalFlag,
 			allowRenewalAfterExpiryFlag,
+			disableSmallstepExtensionsFlag,
 			//enableX509Flag,
 			enableSSHFlag,
 
@@ -404,8 +435,11 @@ func updateClaims(ctx *cli.Context, p *linkedca.Provisioner) {
 	if ctx.IsSet("allow-renewal-after-expiry") {
 		p.Claims.AllowRenewalAfterExpiry = ctx.Bool("allow-renewal-after-expiry")
 	}
-	claims := p.Claims
+	if ctx.IsSet("disable-smallstep-extensions") {
+		p.Claims.DisableSmallstepExtensions = ctx.Bool("disable-smallstep-extensions")
+	}
 
+	claims := p.Claims
 	if claims.X509 == nil {
 		claims.X509 = &linkedca.X509Claims{}
 	}
@@ -474,7 +508,7 @@ func updateJWKDetails(ctx *cli.Context, p *linkedca.Provisioner) error {
 		err      error
 		password string
 	)
-	if passwordFile := ctx.String("password-file"); len(passwordFile) > 0 {
+	if passwordFile := ctx.String("password-file"); passwordFile != "" {
 		password, err = utils.ReadStringPasswordFromFile(passwordFile)
 		if err != nil {
 			return err
@@ -779,10 +813,29 @@ func updateOIDCDetails(ctx *cli.Context, p *linkedca.Provisioner) error {
 		}
 		details.ConfigurationEndpoint = ce
 	}
+	if ctx.IsSet("remove-scope") {
+		details.Scopes = removeElements(details.Scopes, ctx.StringSlice("remove-scope"))
+	}
+	if ctx.IsSet("scope") {
+		details.Scopes = append(details.Scopes, ctx.StringSlice("scope")...)
+	}
+	if ctx.IsSet("remove-auth-param") {
+		details.AuthParams = removeElements(details.AuthParams, ctx.StringSlice("remove-auth-param"))
+	}
+	if ctx.IsSet("auth-param") {
+		details.AuthParams = append(details.AuthParams, ctx.StringSlice("auth-param")...)
+	}
 	return nil
 }
 
 func updateAWSDetails(ctx *cli.Context, p *linkedca.Provisioner) error {
+	if ctx.IsSet("disable-ssh-ca-user") {
+		return errors.New("flag disable-ssh-ca-user is not supported for AWS IID provisioners")
+	}
+	if ctx.IsSet("disable-ssh-ca-host") {
+		return errors.New("flag disable-ssh-ca-host is not supported for AWS IID provisioners")
+	}
+
 	data, ok := p.Details.GetData().(*linkedca.ProvisionerDetails_AWS)
 	if !ok {
 		return errors.New("error casting details to AWS type")
@@ -812,6 +865,13 @@ func updateAWSDetails(ctx *cli.Context, p *linkedca.Provisioner) error {
 }
 
 func updateAzureDetails(ctx *cli.Context, p *linkedca.Provisioner) error {
+	if ctx.IsSet("disable-ssh-ca-user") {
+		return errors.New("flag disable-ssh-ca-user is not supported for Azure IID provisioners")
+	}
+	if ctx.IsSet("disable-ssh-ca-host") {
+		return errors.New("flag disable-ssh-ca-host is not supported for Azure IID provisioners")
+	}
+
 	data, ok := p.Details.GetData().(*linkedca.ProvisionerDetails_Azure)
 	if !ok {
 		return errors.New("error casting details to Azure type")
@@ -871,6 +931,14 @@ func updateGCPDetails(ctx *cli.Context, p *linkedca.Provisioner) error {
 	if ctx.IsSet("disable-trust-on-first-use") {
 		details.DisableTrustOnFirstUse = ctx.Bool("disable-trust-on-first-use")
 	}
+	if ctx.IsSet("disable-ssh-ca-user") {
+		boolVal := ctx.Bool("disable-ssh-ca-user")
+		details.DisableSshCaUser = &boolVal
+	}
+	if ctx.IsSet("disable-ssh-ca-host") {
+		boolVal := ctx.Bool("disable-ssh-ca-host")
+		details.DisableSshCaHost = &boolVal
+	}
 	if ctx.IsSet("remove-gcp-service-account") {
 		details.ServiceAccounts = removeElements(details.ServiceAccounts, ctx.StringSlice("remove-gcp-service-account"))
 	}
@@ -883,6 +951,7 @@ func updateGCPDetails(ctx *cli.Context, p *linkedca.Provisioner) error {
 	if ctx.IsSet("gcp-project") {
 		details.ProjectIds = append(details.ProjectIds, ctx.StringSlice("gcp-project")...)
 	}
+
 	return nil
 }
 
@@ -908,8 +977,45 @@ func updateSCEPDetails(ctx *cli.Context, p *linkedca.Provisioner) error {
 	if ctx.IsSet("include-root") {
 		details.IncludeRoot = ctx.Bool("include-root")
 	}
+	if ctx.IsSet("exclude-intermediate") {
+		details.ExcludeIntermediate = ctx.Bool("exclude-intermediate")
+	}
 	if ctx.IsSet("encryption-algorithm-identifier") {
 		details.EncryptionAlgorithmIdentifier = int32(ctx.Int("encryption-algorithm-identifier"))
+	}
+
+	decrypter := details.GetDecrypter()
+	if decrypter == nil {
+		decrypter = &linkedca.SCEPDecrypter{}
+	}
+	if ctx.IsSet("scep-decrypter-certificate-file") {
+		decrypterCertificateFile := ctx.String("scep-decrypter-certificate-file")
+		data, err := parseSCEPDecrypterCertificate(decrypterCertificateFile)
+		if err != nil {
+			return fmt.Errorf("failed parsing certificate from %q: %w", decrypterCertificateFile, err)
+		}
+		decrypter.Certificate = data
+		details.Decrypter = decrypter
+	}
+	if ctx.IsSet("scep-decrypter-key-uri") {
+		decrypter.KeyUri = ctx.String("scep-decrypter-key-uri")
+		details.Decrypter = decrypter
+	}
+	if decrypterKeyFile := ctx.String("scep-decrypter-key-file"); decrypterKeyFile != "" {
+		data, err := readSCEPDecrypterKey(decrypterKeyFile)
+		if err != nil {
+			return fmt.Errorf("failed reading decrypter key from %q: %w", decrypterKeyFile, err)
+		}
+		decrypter.Key = data
+		details.Decrypter = decrypter
+	}
+	if decrypterKeyPasswordFile := ctx.String("scep-decrypter-key-password-file"); decrypterKeyPasswordFile != "" {
+		decrypterKeyPassword, err := utils.ReadPasswordFromFile(decrypterKeyPasswordFile)
+		if err != nil {
+			return fmt.Errorf("failed reading decrypter key password from %q: %w", decrypterKeyPasswordFile, err)
+		}
+		decrypter.KeyPassword = decrypterKeyPassword
+		details.Decrypter = decrypter
 	}
 
 	return nil

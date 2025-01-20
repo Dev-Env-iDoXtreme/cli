@@ -7,14 +7,16 @@ import (
 	"os"
 
 	"github.com/pkg/errors"
-	"github.com/smallstep/cli/flags"
-	"github.com/smallstep/cli/utils"
 	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/command"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/ui"
+
+	"github.com/smallstep/cli-utils/command"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/ui"
 	"go.step.sm/crypto/jose"
 	"go.step.sm/crypto/pemutil"
+
+	"github.com/smallstep/cli/flags"
+	"github.com/smallstep/cli/utils"
 )
 
 func changePassCommand() cli.Command {
@@ -115,7 +117,7 @@ func changePassAction(ctx *cli.Context) error {
 
 	if bytes.HasPrefix(b, []byte("-----BEGIN ")) {
 		opts := []pemutil.Options{pemutil.WithFilename(keyPath)}
-		if len(decryptPassFile) > 0 {
+		if decryptPassFile != "" {
 			opts = append(opts, pemutil.WithPasswordFile(decryptPassFile))
 		}
 		key, err := pemutil.Parse(b, opts...)
@@ -124,7 +126,7 @@ func changePassAction(ctx *cli.Context) error {
 		}
 		opts = []pemutil.Options{}
 		if !noPass {
-			if len(encryptPassFile) > 0 {
+			if encryptPassFile != "" {
 				opts = append(opts, pemutil.WithPasswordFile(encryptPassFile))
 			} else {
 				pass, err := ui.PromptPassword(fmt.Sprintf("Please enter the password to encrypt %s", newKeyPath))
@@ -140,7 +142,7 @@ func changePassAction(ctx *cli.Context) error {
 		}
 	} else {
 		opts := []jose.Option{}
-		if len(decryptPassFile) > 0 {
+		if decryptPassFile != "" {
 			opts = append(opts, jose.WithPasswordFile(decryptPassFile))
 		}
 		jwk, err := jose.ReadKey(keyPath, opts...)
@@ -157,7 +159,7 @@ func changePassAction(ctx *cli.Context) error {
 					return ui.PromptPassword(s)
 				}),
 			}
-			if len(encryptPassFile) > 0 {
+			if encryptPassFile != "" {
 				opts = append(opts, jose.WithPasswordFile(encryptPassFile))
 			}
 			jwe, err := jose.Encrypt(b, opts...)

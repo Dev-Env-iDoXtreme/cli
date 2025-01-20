@@ -14,19 +14,22 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/urfave/cli"
+	"golang.org/x/crypto/ssh"
+
 	"github.com/smallstep/certificates/api"
 	"github.com/smallstep/certificates/authority/provisioner"
 	"github.com/smallstep/certificates/ca"
 	"github.com/smallstep/certificates/pki"
-	"github.com/smallstep/cli/flags"
-	"github.com/smallstep/cli/token"
-	"github.com/smallstep/cli/utils"
-	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/ui"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/ui"
 	"go.step.sm/crypto/keyutil"
 	"go.step.sm/crypto/pemutil"
 	"go.step.sm/crypto/x509util"
+
+	"github.com/smallstep/cli/flags"
+	"github.com/smallstep/cli/token"
+	"github.com/smallstep/cli/utils"
 )
 
 // CertificateFlow manages the flow to retrieve a new certificate.
@@ -35,15 +38,65 @@ type CertificateFlow struct {
 	offline   bool
 }
 
+type flowContext struct {
+	DisableCustomSANs       bool
+	SSHPublicKey            ssh.PublicKey
+	CertificateRequest      *x509.CertificateRequest
+	ConfirmationFingerprint string
+}
+
 // sharedContext is used to share information between commands.
-var sharedContext = struct {
-	DisableCustomSANs bool
-}{}
+var sharedContext flowContext
+
+type funcFlowOption struct {
+	f func(fo *flowContext)
+}
+
+func (ffo *funcFlowOption) apply(fo *flowContext) {
+	ffo.f(fo)
+}
+
+func newFuncFlowOption(f func(fo *flowContext)) *funcFlowOption {
+	return &funcFlowOption{
+		f: f,
+	}
+}
+
+type Option interface {
+	apply(fo *flowContext)
+}
+
+// WithSSHPublicKey sets the SSH public key used in the request.
+func WithSSHPublicKey(key ssh.PublicKey) Option {
+	return newFuncFlowOption(func(fo *flowContext) {
+		fo.SSHPublicKey = key
+	})
+}
+
+// WithCertificateRequest sets the X509 certificate request used in the request.
+func WithCertificateRequest(cr *x509.CertificateRequest) Option {
+	return newFuncFlowOption(func(fo *flowContext) {
+		fo.CertificateRequest = cr
+	})
+}
+
+// WithConfirmationFingerprint sets the confirmation fingerprint used in the
+// request.
+func WithConfirmationFingerprint(fp string) Option {
+	return newFuncFlowOption(func(fo *flowContext) {
+		fo.ConfirmationFingerprint = fp
+	})
+}
 
 // NewCertificateFlow initializes a cli flow to get a new certificate.
-func NewCertificateFlow(ctx *cli.Context) (*CertificateFlow, error) {
+func NewCertificateFlow(ctx *cli.Context, opts ...Option) (*CertificateFlow, error) {
 	var err error
 	var offlineClient *OfflineCA
+
+	// Add options to the shared context
+	for _, opt := range opts {
+		opt.apply(&sharedContext)
+	}
 
 	offline := ctx.Bool("offline")
 	if offline {
@@ -81,7 +134,7 @@ func (f *CertificateFlow) GetClient(ctx *cli.Context, tok string, options ...ca.
 		return nil, errors.Wrap(err, "error parsing flag '--token'")
 	}
 	// Prepare client for bootstrap or provisioning tokens
-	if len(jwt.Payload.SHA) > 0 && len(jwt.Payload.Audience) > 0 && strings.HasPrefix(strings.ToLower(jwt.Payload.Audience[0]), "http") {
+	if jwt.Payload.SHA != "" && len(jwt.Payload.Audience) > 0 && strings.HasPrefix(strings.ToLower(jwt.Payload.Audience[0]), "http") {
 		if caURL == "" {
 			caURL = jwt.Payload.Audience[0]
 		}
@@ -211,7 +264,7 @@ func (f *CertificateFlow) Sign(ctx *cli.Context, tok string, csr api.Certificate
 		return err
 	}
 
-	if resp.CertChainPEM == nil || len(resp.CertChainPEM) == 0 {
+	if len(resp.CertChainPEM) == 0 {
 		resp.CertChainPEM = []api.Certificate{resp.ServerPEM, resp.CaPEM}
 	}
 	var data []byte

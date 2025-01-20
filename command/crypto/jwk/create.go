@@ -9,15 +9,17 @@ import (
 	"strconv"
 
 	"github.com/pkg/errors"
-	"github.com/smallstep/cli/flags"
-	"github.com/smallstep/cli/utils"
 	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/command"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/ui"
+
+	"github.com/smallstep/cli-utils/command"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/ui"
 	"go.step.sm/crypto/jose"
 	"go.step.sm/crypto/keyutil"
 	"go.step.sm/crypto/randutil"
+
+	"github.com/smallstep/cli/flags"
+	"github.com/smallstep/cli/utils"
 )
 
 const (
@@ -377,9 +379,9 @@ existing <pem-file> instead of creating a new key.`,
 			},
 			flags.PasswordFile,
 			flags.NoPassword,
+			flags.Force,
 			flags.Subtle,
 			flags.Insecure,
-			flags.Force,
 		},
 	}
 }
@@ -394,7 +396,7 @@ func createAction(ctx *cli.Context) (err error) {
 	usePassword := true
 	passwordFile := ctx.String("password-file")
 	if ctx.Bool("no-password") {
-		if len(passwordFile) > 0 {
+		if passwordFile != "" {
 			return errs.IncompatibleFlag(ctx, "no-password", "password-file")
 		}
 		if ctx.Bool("insecure") {
@@ -412,7 +414,7 @@ func createAction(ctx *cli.Context) (err error) {
 
 	// Read password if necessary
 	var password string
-	if len(passwordFile) > 0 {
+	if passwordFile != "" {
 		password, err = utils.ReadStringPasswordFromFile(passwordFile)
 		if err != nil {
 			return err

@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"os"
 
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/ui"
-
 	"github.com/pkg/errors"
-	"github.com/smallstep/cli/utils"
 	"github.com/urfave/cli"
+
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/ui"
 	"go.step.sm/crypto/jose"
+
+	"github.com/smallstep/cli/utils"
 )
 
 func decryptCommand() cli.Command {
@@ -47,6 +48,10 @@ used with **--key** the <kid> value must match the **"kid"** member of the JWK. 
 used with **--jwks** (a JWK Set) the KID value must match the **"kid"** member of
 one of the JWKs in the JWK Set.`,
 			},
+			cli.StringFlag{
+				Name:  "password-file",
+				Usage: `The path to the <file> containing the password to encrypt the keys.`,
+			},
 		},
 	}
 }
@@ -64,6 +69,7 @@ func decryptAction(ctx *cli.Context) error {
 	key := ctx.String("key")
 	jwks := ctx.String("jwks")
 	kid := ctx.String("kid")
+	passwordFile := ctx.String("password-file")
 
 	obj, err := jose.ParseEncrypted(string(data))
 	if err != nil {
@@ -94,7 +100,7 @@ func decryptAction(ctx *cli.Context) error {
 	// Add parse options
 	var options []jose.Option
 	options = append(options, jose.WithUse("enc"))
-	if len(kid) > 0 {
+	if kid != "" {
 		options = append(options, jose.WithKid(kid))
 	}
 
@@ -107,7 +113,17 @@ func decryptAction(ctx *cli.Context) error {
 	case jwks != "":
 		jwk, err = jose.ReadKeySet(jwks, options...)
 	case isPBES2:
-		pbes2Key, err = ui.PromptPassword("Please enter the password to decrypt the content encryption key")
+		var password string
+		if passwordFile != "" {
+			password, err = utils.ReadStringPasswordFromFile(passwordFile)
+			if err != nil {
+				return err
+			}
+		}
+		pbes2Key, err =
+			ui.PromptPassword(
+				"Please enter the password to decrypt the content encryption key",
+				ui.WithValue(password))
 	default:
 		return errs.RequiredOrFlag(ctx, "key", "jwk")
 	}

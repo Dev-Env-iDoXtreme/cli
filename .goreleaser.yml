@@ -1,18 +1,35 @@
-# This is an example .goreleaser.yml file with some sane defaults.
-# Make sure to check the documentation at http://goreleaser.com
+# Documentation: https://goreleaser.com/customization/
+# yaml-language-server: $schema=https://goreleaser.com/static/schema-pro.json
+version: 2
 project_name: step
+
+variables:
+  packageName: step-cli
+  packageRelease: 1 # Manually update release: in the nfpm section to match this value if you change this
 
 before:
   hooks:
-    # You may remove this if you don't use go modules.
     - go mod download
-    # - go generate ./...
+
+after:
+  hooks:
+    # This script depends on IS_PRERELEASE env being set. This is set by CI in the Is Pre-release step.
+    - cmd: bash scripts/package-repo-import.sh {{ .Var.packageName }} {{ .Version }}
+      output: true
 
 builds:
-  -
+  - &BUILD
     id: default
     env:
       - CGO_ENABLED=0
+    main: ./cmd/step/main.go
+    flags:
+      - -trimpath
+    ldflags:
+      - -w -X main.Version={{.Version}} -X main.BuildTime={{.Date}}
+    gcflags:
+      - >-
+        {{- if ne (index .Env "DEBUG") "" }}all=-N -l{{- end }}
     targets:
       - darwin_amd64
       - darwin_arm64
@@ -28,38 +45,25 @@ builds:
       - linux_ppc64le
       - windows_amd64
       - windows_arm64
-    flags:
-      - -trimpath
-    main: ./cmd/step/main.go
     binary: bin/step
-    ldflags:
-      - -w -X main.Version={{.Version}} -X main.BuildTime={{.Date}}
   -
     # This build is specifically for nFPM targets (.deb and .rpm files).
     # It's exactly the same as the default build above, except:
     # - it only builds the archs we want to produce .deb and .rpm files for
     # - the name of the output binary is step-cli
+    << : *BUILD
     id: nfpm
-    env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-    goarch:
-      - amd64
-      - arm64
-    flags:
-      - -trimpath
-    main: ./cmd/step/main.go
+    targets:
+      - linux_amd64
+      - linux_arm64
     binary: step-cli
-    ldflags:
-      - -w -X main.Version={{.Version}} -X main.BuildTime={{.Date}}
 
 archives:
-  -
+  - &ARCHIVE
+    id: default
     # Can be used to change the archive formats for specific GOOSs.
     # Most common use case is to archive as zip on Windows.
     # Default is empty.
-    rlcp: true
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Version }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
     format_overrides:
       - goos: windows
@@ -71,6 +75,12 @@ archives:
       - README.md
       - LICENSE
       - autocomplete/*
+  -
+    << : *ARCHIVE
+    id: unversioned
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
+    wrap_in_directory: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
+
 
 nfpms:
   # Configure nFPM for .deb and .rpm releases
@@ -82,11 +92,17 @@ nfpms:
   # List file contents: dpkg -c dist/step_...deb
   # Package metadata: dpkg --info dist/step_....deb
   #
-  -
+  - &NFPM
+    id: packages
     builds:
       - nfpm
-    package_name: step-cli
-    file_name_template: "{{ .PackageName }}_{{ .Version }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
+    package_name: "{{ .Var.packageName }}"
+    release: "1"
+    file_name_template: >-
+      {{- trimsuffix .ConventionalFileName .ConventionalExtension -}}
+      {{- if and (eq .Arm "6") (eq .ConventionalExtension ".deb") }}6{{ end -}}
+      {{- if not (eq .Amd64 "v1")}}{{ .Amd64 }}{{ end -}}
+      {{- .ConventionalExtension -}}
     vendor: Smallstep Labs
     homepage: https://github.com/smallstep/cli
     maintainer: Smallstep <techadmin@smallstep.com>
@@ -100,7 +116,6 @@ nfpms:
       - deb
       - rpm
     priority: optional
-
     bindir: /usr/bin
     contents:
       - src: debian/copyright
@@ -113,10 +128,20 @@ nfpms:
     scripts:
       postinstall: scripts/postinstall.sh
       postremove: scripts/postremove.sh
+    rpm:
+      signature:
+          key_file: "{{ .Env.GPG_PRIVATE_KEY_FILE }}"
+    deb:
+      signature:
+          key_file: "{{ .Env.GPG_PRIVATE_KEY_FILE }}"
+          type: origin
+  -
+    << : *NFPM
+    id: unversioned
+    file_name_template: "{{ .PackageName }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
 
 source:
   enabled: true
-  rlcp: true
   name_template: '{{ .ProjectName }}_{{ .Version }}'
 
 checksum:
@@ -128,11 +153,17 @@ signs:
 - cmd: cosign
   signature: "${artifact}.sig"
   certificate: "${artifact}.pem"
-  args: ["sign-blob", "--oidc-issuer=https://token.actions.githubusercontent.com", "--output-certificate=${certificate}", "--output-signature=${signature}", "${artifact}"]
+  args: ["sign-blob", "--oidc-issuer=https://token.actions.githubusercontent.com", "--output-certificate=${certificate}", "--output-signature=${signature}", "${artifact}", "--yes"]
   artifacts: all
 
+publishers:
+- name: Google Cloud Artifact Registry
+  ids:
+  - packages
+  cmd: ./scripts/package-upload.sh {{ abs .ArtifactPath }} {{ .Var.packageName }} {{ .Version }} {{ .Var.packageRelease }}
+
 snapshot:
-  name_template: "{{ .Tag }}-next"
+  version_template: "{{ .Tag }}-next"
 
 release:
   # Repo in which the release will be created.
@@ -167,11 +198,19 @@ release:
   header: |
     ## Official Release Artifacts
 
-    #### Linux
+    Below are the most popular artifacts for `step` on each platform.
 
+    For packaged versions (Homebrew, Scoop, etc.), see our [installation docs](https://smallstep.com/docs/step-cli/installation).
+
+    #### Linux
     - 📦 [step_linux_{{ .Version }}_amd64.tar.gz](https://dl.smallstep.com/gh-release/cli/gh-release-header/{{ .Tag }}/step_linux_{{ .Version }}_amd64.tar.gz)
-    - 📦 [step-cli_{{ .Version }}_amd64.deb](https://dl.smallstep.com/gh-release/cli/gh-release-header/{{ .Tag }}/step-cli_{{ .Version }}_amd64.deb)
-    - 📦 [step-cli_{{ .Version }}_amd64.rpm](https://dl.smallstep.com/gh-release/cli/gh-release-header/{{ .Tag }}/step-cli_{{ .Version }}_amd64.rpm)
+    - 📦 [step_linux_{{ .Version }}_arm64.tar.gz](https://dl.smallstep.com/gh-release/cli/gh-release-header/{{ .Tag }}/step_linux_{{ .Version }}_arm64.tar.gz)
+    - 📦 [step_linux_{{ .Version }}_armv7.tar.gz](https://dl.smallstep.com/gh-release/cli/gh-release-header/{{ .Tag }}/step_linux_{{ .Version }}_armv7.tar.gz)
+    - 📦 [step-cli_{{ replace .Version "-" "." }}-{{ .Var.packageRelease }}_amd64.deb](https://dl.smallstep.com/gh-release/cli/gh-release-header/{{ .Tag }}/step-cli_{{ replace .Version "-" "." }}-{{ .Var.packageRelease }}_amd64.deb)
+    - 📦 [step-cli-{{ replace .Version "-" "." }}-{{ .Var.packageRelease }}.x86_64.rpm](https://dl.smallstep.com/gh-release/cli/gh-release-header/{{ .Tag }}/step-cli-{{ replace .Version "-" "." }}-{{ .Var.packageRelease }}.x86_64.rpm)
+    - 📦 [step-cli_{{ replace .Version "-" "." }}-{{ .Var.packageRelease }}_arm64.deb](https://dl.smallstep.com/gh-release/cli/gh-release-header/{{ .Tag }}/step-cli_{{ replace .Version "-" "." }}-{{ .Var.packageRelease }}_arm64.deb)
+    - 📦 [step-cli-{{ replace .Version "-" "." }}-{{ .Var.packageRelease }}.aarch64.rpm](https://dl.smallstep.com/gh-release/cli/gh-release-header/{{ .Tag }}/step-cli-{{ replace .Version "-" "." }}-{{ .Var.packageRelease }}.aarch64.rpm)
+    - see `Assets` below for more builds
 
     #### macOS Darwin
 
@@ -181,12 +220,8 @@ release:
     #### Windows
 
     - 📦 [step_windows_{{ .Version }}_amd64.zip](https://dl.smallstep.com/gh-release/cli/gh-release-header/{{ .Tag }}/step_windows_{{ .Version }}_amd64.zip)
+    - 📦 [step_windows_{{ .Version }}_arm64.zip](https://dl.smallstep.com/gh-release/cli/gh-release-header/{{ .Tag }}/step_windows_{{ .Version }}_arm64.zip)
 
-    For more builds across platforms and architectures see the `Assets` section below.
-    And for packaged versions (Homebrew, Scoop, etc.), see our [installation docs](https://smallstep.com/docs/step-cli/installation).
-
-
-    Don't see the artifact you need? Open an issue [here](https://github.com/smallstep/cli/issues/new/choose).
 
     ## Signatures and Checksums
 
@@ -198,7 +233,7 @@ release:
     cosign verify-blob \
       --certificate ~/Download/step_darwin_{{ .Version }}_amd64.tar.gz.pem \
       --signature ~/Downloads/step_darwin_{{ .Version }}_amd64.tar.gz.sig \
-      --certificate-identity-regexp "https://github\.com/smallstep/cli/.*" \
+      --certificate-identity-regexp "https://github\.com/smallstep/workflows/.*" \
       --certificate-oidc-issuer https://token.actions.githubusercontent.com \
       ~/Downloads/step_darwin_{{ .Version }}_amd64.tar.gz
     ```
@@ -212,7 +247,7 @@ release:
 
     Those were the changes on {{ .Tag }}!
 
-    Come join us on [Discord](https://discord.gg/X2RKGwEbV9) to ask questions, chat about PKI, or get a sneak peak at the freshest PKI memes.
+    Come join us on [Discord](https://discord.gg/X2RKGwEbV9) to ask questions, chat about PKI, or get a sneak peek at the freshest PKI memes.
 
   # You can disable this pipe in order to not upload any artifacts.
   # Defaults to false.
@@ -227,43 +262,206 @@ release:
   #  - glob: ./glob/**/to/**/file/**/*
   #  - glob: ./glob/foo/to/bar/file/foobar/override_from_previous
 
+blobs:
+  - &S3_VERSIONED
+    provider: s3
+    disable: 'false'
+    ids:
+      - default
+    bucket: '{{ .Env.AWS_S3_BUCKET }}'
+    region: '{{ .Env.AWS_S3_REGION }}'
+    directory: '/'
+    acl: public-read
+    extra_files:
+      - glob: ./dist/default_darwin_amd64_v1/bin/step
+        name_template: step_{{ .Version }}_darwin_amd64
+      - glob: ./dist/default_darwin_arm64*/bin/step
+        name_template: step_{{ .Version }}_darwin_arm64
+      - glob: ./dist/default_linux_amd64_v1/bin/step
+        name_template: step_{{ .Version }}_linux_amd64
+      - glob: ./dist/default_linux_arm64*/bin/step
+        name_template: step_{{ .Version }}_linux_arm64
+      - glob: ./dist/default_windows_amd64_v1/bin/step.exe
+        name_template: step_{{ .Version }}_windows_amd64.exe
+      - glob: ./dist/default_freebsd_*/bin/step
+        name_template: step_{{ .Version }}_freebsd_amd64
+    extra_files_only: true
+
+  # Unversioned (`latest`) copies of binaries.
+  # This section should only run on full releases (not prereleases).
+  -
+    << : *S3_VERSIONED
+    disable: '{{ if .Prerelease }}true{{ else }}false{{ end }}'
+    extra_files:
+      - glob: ./dist/default_darwin_amd64_v1/bin/step
+        name_template: step_latest_darwin_amd64
+      - glob: ./dist/default_darwin_arm64*/bin/step
+        name_template: step_latest_darwin_arm64
+      - glob: ./dist/default_linux_amd64_v1/bin/step
+        name_template: step_latest_linux_amd64
+      - glob: ./dist/default_linux_arm64*/bin/step
+        name_template: step_latest_linux_arm64
+      - glob: ./dist/default_windows_amd64_v1/bin/step.exe
+        name_template: step_latest_windows_amd64.exe
+      - glob: ./dist/default_freebsd_*/bin/step
+        name_template: step_latest_freebsd_amd64
+    extra_files_only: true
+
+winget:
+  -
+    # IDs of the archives to use.
+    # Empty means all IDs.
+    ids: [ default ]
+
+    #
+    # Default: ProjectName
+    # Templates: allowed
+    name: step
+
+    # Publisher name.
+    #
+    # Templates: allowed
+    # Required.
+    publisher: Smallstep
+
+    # Your app's description.
+    #
+    # Templates: allowed
+    # Required.
+    short_description: "A Swiss army knife for working with X.509 certificates, JWTs, etc."
+
+    # License name.
+    #
+    # Templates: allowed
+    # Required.
+    license: "Apache-2.0"
+
+    # Publisher URL.
+    #
+    # Templates: allowed
+    publisher_url: "https://smallstep.com"
+
+    # Publisher support URL.
+    #
+    # Templates: allowed
+    publisher_support_url: "https://github.com/smallstep/certificates/discussions"
+
+    # URL which is determined by the given Token (github, gitlab or gitea).
+    #
+    # Default depends on the client.
+    # Templates: allowed
+    url_template: "https://github.com/smallstep/cli/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+
+    # Git author used to commit to the repository.
+    commit_author:
+      name: goreleaserbot
+      email: goreleaser@smallstep.com
+
+    # The project name and current git tag are used in the format string.
+    #
+    # Templates: allowed
+    commit_msg_template: "{{ .PackageIdentifier }}: {{ .Tag }}"
+
+    # Your app's homepage.
+    homepage: "https://github.com/smallstep/cli"
+
+    # Your app's long description.
+    #
+    # Templates: allowed
+    description: ""
+
+    # License URL.
+    #
+    # Templates: allowed
+    license_url: "https://github.com/smallstep/cli/blob/master/LICENSE"
+
+    # Release notes URL.
+    #
+    # Templates: allowed
+    release_notes_url: "https://github.com/smallstep/cli/releases/tag/{{ .Tag }}"
+
+    # Create the PR - for testing
+    skip_upload: auto
+
+    # Tags.
+    tags:
+      - cli
+      - smallstep
+
+    # Repository to push the generated files to.
+    repository:
+      owner: smallstep
+      name: winget-pkgs
+      branch: "step-{{.Version}}"
+
+      # Optionally a token can be provided, if it differs from the token
+      # provided to GoReleaser
+      # Templates: allowed
+      #token: "{{ .Env.GITHUB_PERSONAL_AUTH_TOKEN }}"
+
+      # Sets up pull request creation instead of just pushing to the given branch.
+      # Make sure the 'branch' property is different from base before enabling
+      # it.
+      #
+      # Since: v1.17
+      pull_request:
+        # Whether to enable it or not.
+        enabled: true
+        check_boxes: true
+        # Whether to open the PR as a draft or not.
+        #
+        # Default: false
+        # Since: v1.19
+        # draft: true
+
+        # Base can also be another repository, in which case the owner and name
+        # above will be used as HEAD, allowing cross-repository pull requests.
+        #
+        # Since: v1.19
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+
 scoops:
--
-  name: cli
-  # Template for the url which is determined by the given Token (github or gitlab)
-  # Default for github is "https://github.com/<repo_owner>/<repo_name>/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
-  # Default for gitlab is "https://gitlab.com/<repo_owner>/<repo_name>/uploads/{{ .ArtifactUploadHash }}/{{ .ArtifactName }}"
-  # Default for gitea is "https://gitea.com/<repo_owner>/<repo_name>/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
-  url_template: "http://github.com/smallstep/cli/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+  -
+    ids: [ default ]
+    name: step
+    # Template for the url which is determined by the given Token (github or gitlab)
+    # Default for github is "https://github.com/<repo_owner>/<repo_name>/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    # Default for gitlab is "https://gitlab.com/<repo_owner>/<repo_name>/uploads/{{ .ArtifactUploadHash }}/{{ .ArtifactName }}"
+    # Default for gitea is "https://gitea.com/<repo_owner>/<repo_name>/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    url_template: "http://github.com/smallstep/cli/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
 
-  # Repository to push the app manifest to.
-  bucket:
-    owner: smallstep
-    name: scoop-bucket
+    # Repository to push the app manifest to.
+    repository:
+      owner: smallstep
+      name: scoop-bucket
+      branch: main
 
-  # Git author used to commit to the repository.
-  # Defaults are shown.
-  commit_author:
-    name: goreleaserbot
-    email: goreleaser@smallstep.com
+    # Git author used to commit to the repository.
+    # Defaults are shown.
+    commit_author:
+      name: goreleaserbot
+      email: goreleaser@smallstep.com
 
-  # The project name and current git tag are used in the format string.
-  commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
+    # The project name and current git tag are used in the format string.
+    commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
 
-  # Your app's homepage.
-  # Default is empty.
-  homepage: "https://smallstep.com/"
+    # Your app's homepage.
+    # Default is empty.
+    homepage: "https://smallstep.com/"
 
-  # Skip uploads for prerelease.
-  skip_upload: auto
+    # Skip uploads for prerelease.
+    skip_upload: auto
 
-  # Your app's description.
-  # Default is empty.
-  description: "Crypto toolkit for working with X.509, OAuth, JWT, OATH OTP, etc."
+    # Your app's description.
+    # Default is empty.
+    description: "Crypto toolkit for working with X.509, OAuth, JWT, OATH OTP, etc."
 
-  # Your app's license
-  # Default is empty.
-  license: "Apache-2.0"
+    # Your app's license
+    # Default is empty.
+    license: "Apache-2.0"
 
   #dockers:
   #  - dockerfile: docker/Dockerfile

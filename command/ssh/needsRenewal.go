@@ -8,11 +8,13 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/urfave/cli"
+	"golang.org/x/crypto/ssh"
+
+	"github.com/smallstep/cli-utils/errs"
+
 	"github.com/smallstep/cli/internal/sshutil"
 	"github.com/smallstep/cli/utils"
-	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/errs"
-	"golang.org/x/crypto/ssh"
 )
 
 const defaultPercentUsedThreshold = 66
@@ -77,25 +79,36 @@ Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".`,
 }
 
 func needsRenewalAction(ctx *cli.Context) error {
-	if err := errs.NumberOfArguments(ctx, 1); err != nil {
-		return errs.NewExitError(err, 255)
+	if err := errs.MinMaxNumberOfArguments(ctx, 0, 1); err != nil {
+		return errs.NewExitError(errors.Wrap(err, "too many arguments"), 255)
+	}
+
+	var name string
+	switch ctx.NArg() {
+	case 0:
+		name = "-"
+	case 1:
+		name = ctx.Args().First()
+	default:
+		return errs.NewExitError(errors.Errorf("too many arguments"), 255)
 	}
 
 	var (
-		certFile  = ctx.Args().First()
 		expiresIn = ctx.String("expires-in")
 		isVerbose = ctx.Bool("verbose")
 	)
 
-	_, err := os.Stat(certFile)
-	switch {
-	case os.IsNotExist(err):
-		return errs.NewExitError(err, 2)
-	case err != nil:
-		return errs.NewExitError(err, 255)
+	if name != "-" {
+		_, err := os.Stat(name)
+		switch {
+		case os.IsNotExist(err):
+			return errs.NewExitError(err, 2)
+		case err != nil:
+			return errs.NewExitError(err, 255)
+		}
 	}
 
-	b, err := utils.ReadFile(certFile)
+	b, err := utils.ReadFile(name)
 	if err != nil {
 		return errs.NewExitError(err, 255)
 	}

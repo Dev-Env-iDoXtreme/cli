@@ -4,14 +4,16 @@ import (
 	"encoding/pem"
 	"os"
 
-	"github.com/smallstep/cli/flags"
-	"github.com/smallstep/cli/utils"
 	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/command"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/ui"
+
+	"github.com/smallstep/cli-utils/command"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/ui"
 	"go.step.sm/crypto/keyutil"
 	"go.step.sm/crypto/pemutil"
+
+	"github.com/smallstep/cli/flags"
+	"github.com/smallstep/cli/utils"
 )
 
 func publicCommand() cli.Command {
@@ -95,7 +97,7 @@ func publicAction(ctx *cli.Context) error {
 		return err
 	}
 
-	if out := ctx.String("out"); len(out) > 0 {
+	if out := ctx.String("out"); out != "" {
 		if err := utils.WriteFile(out, pem.EncodeToMemory(block), 0600); err != nil {
 			return err
 		}

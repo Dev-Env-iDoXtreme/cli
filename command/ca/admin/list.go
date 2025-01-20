@@ -5,11 +5,13 @@ import (
 	"os"
 	"text/tabwriter"
 
+	"github.com/urfave/cli"
+
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/linkedca"
+
 	"github.com/smallstep/cli/flags"
 	"github.com/smallstep/cli/utils/cautils"
-	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/linkedca"
 )
 
 func listCommand() cli.Command {
@@ -97,7 +99,7 @@ func listAction(ctx *cli.Context) (err error) {
 		if isNotSuperAdmin && a.Type == linkedca.Admin_SUPER_ADMIN {
 			return false
 		}
-		if len(provName) > 0 && a.ProvisionerName != provName {
+		if provName != "" && a.ProvisionerName != provName {
 			return false
 		}
 		return true

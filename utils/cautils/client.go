@@ -9,16 +9,19 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/urfave/cli"
+
 	"github.com/smallstep/certificates/api"
 	"github.com/smallstep/certificates/authority/provisioner"
 	"github.com/smallstep/certificates/ca"
 	"github.com/smallstep/certificates/pki"
-	"github.com/smallstep/cli/flags"
-	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/ui"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/ui"
+
 	"go.step.sm/crypto/keyutil"
 	"go.step.sm/crypto/pemutil"
+
+	"github.com/smallstep/cli/flags"
 )
 
 // CaClient is the interface implemented by a client used to sign, renew, revoke
@@ -115,7 +118,7 @@ func NewAdminClient(ctx *cli.Context, opts ...ca.ClientOption) (*ca.AdminClient,
 		adminCert     []*x509.Certificate
 		adminKey      interface{}
 	)
-	if len(adminCertFile) > 0 || len(adminKeyFile) > 0 {
+	if adminCertFile != "" || adminKeyFile != "" {
 		if adminCertFile == "" {
 			return nil, errs.RequiredWithFlag(ctx, "admin-key", "admin-cert")
 		}
@@ -184,7 +187,7 @@ func NewAdminClient(ctx *cli.Context, opts ...ca.ClientOption) (*ca.AdminClient,
 		if err != nil {
 			return nil, err
 		}
-		if signResponse.CertChainPEM == nil || len(signResponse.CertChainPEM) == 0 {
+		if len(signResponse.CertChainPEM) == 0 {
 			signResponse.CertChainPEM = []api.Certificate{signResponse.ServerPEM, signResponse.CaPEM}
 		}
 		adminCert = make([]*x509.Certificate, len(signResponse.CertChainPEM))

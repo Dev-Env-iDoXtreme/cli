@@ -16,11 +16,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/smallstep/cli/utils"
 	"github.com/urfave/cli"
 
-	"go.step.sm/cli-utils/command"
-	"go.step.sm/cli-utils/errs"
+	"github.com/smallstep/cli-utils/command"
+	"github.com/smallstep/cli-utils/errs"
+
+	"github.com/smallstep/cli/utils"
 )
 
 func init() {
@@ -257,7 +258,7 @@ func (r *tlsRenewer) Reload() error {
 		ClientCAs:  clientCAs,
 		ClientAuth: clientAuth,
 		MinVersion: tls.VersionTLS12,
-		GetCertificate: func(chi *tls.ClientHelloInfo) (*tls.Certificate, error) {
+		GetCertificate: func(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
 			return &cert, nil
 		},
 	}

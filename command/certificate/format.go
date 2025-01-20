@@ -7,12 +7,14 @@ import (
 	"os"
 
 	"github.com/pkg/errors"
+	"github.com/urfave/cli"
+
+	"github.com/smallstep/cli-utils/command"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/ui"
+
 	"github.com/smallstep/cli/flags"
 	"github.com/smallstep/cli/utils"
-	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/command"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/ui"
 )
 
 func formatCommand() cli.Command {
@@ -85,7 +87,7 @@ func formatAction(ctx *cli.Context) error {
 	}
 
 	switch {
-	case bytes.HasPrefix(crtBytes, []byte("-----BEGIN ")): // PEM format
+	case bytes.Contains(crtBytes, []byte("-----BEGIN ")): // PEM format
 		ob, err = decodeCertificatePem(crtBytes)
 		if err != nil {
 			return err

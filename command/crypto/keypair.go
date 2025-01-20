@@ -2,15 +2,17 @@ package crypto
 
 import (
 	"github.com/pkg/errors"
-	"github.com/smallstep/cli/flags"
-	"github.com/smallstep/cli/utils"
 	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/command"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/ui"
+
+	"github.com/smallstep/cli-utils/command"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/ui"
 	"go.step.sm/crypto/jose"
 	"go.step.sm/crypto/keyutil"
 	"go.step.sm/crypto/pemutil"
+
+	"github.com/smallstep/cli/flags"
+	"github.com/smallstep/cli/utils"
 )
 
 func createKeyPairCommand() cli.Command {
@@ -106,7 +108,7 @@ func createAction(ctx *cli.Context) (err error) {
 	insecureMode := ctx.Bool("insecure")
 	noPass := ctx.Bool("no-password")
 	passwordFile := ctx.String("password-file")
-	if noPass && len(passwordFile) > 0 {
+	if noPass && passwordFile != "" {
 		return errs.IncompatibleFlag(ctx, "no-password", "password-file")
 	}
 	if noPass && !insecureMode {
@@ -115,7 +117,7 @@ func createAction(ctx *cli.Context) (err error) {
 
 	// Read password if necessary
 	var password string
-	if len(passwordFile) > 0 {
+	if passwordFile != "" {
 		password, err = utils.ReadStringPasswordFromFile(passwordFile)
 		if err != nil {
 			return err
@@ -124,7 +126,7 @@ func createAction(ctx *cli.Context) (err error) {
 
 	var pub, priv interface{}
 	fromJWK := ctx.String("from-jwk")
-	if len(fromJWK) > 0 {
+	if fromJWK != "" {
 		switch {
 		case ctx.IsSet("kty"):
 			return errs.IncompatibleFlagWithFlag(ctx, "from-jwk", "kty")

@@ -20,21 +20,23 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/urfave/cli"
+
 	"github.com/smallstep/certificates/api"
 	"github.com/smallstep/certificates/ca"
 	"github.com/smallstep/certificates/pki"
+	"github.com/smallstep/cli-utils/command"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/ui"
+	"go.step.sm/crypto/jose"
+	"go.step.sm/crypto/pemutil"
+	"go.step.sm/crypto/x509util"
+
 	"github.com/smallstep/cli/flags"
 	"github.com/smallstep/cli/token"
 	"github.com/smallstep/cli/utils"
 	"github.com/smallstep/cli/utils/cautils"
 	"github.com/smallstep/cli/utils/sysutils"
-	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/command"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/ui"
-	"go.step.sm/crypto/jose"
-	"go.step.sm/crypto/pemutil"
-	"go.step.sm/crypto/x509util"
 )
 
 func renewCertificateCommand() cli.Command {
@@ -243,12 +245,12 @@ func renewCertificateAction(ctx *cli.Context) error {
 	}
 
 	var expiresIn, renewPeriod time.Duration
-	if s := ctx.String("expires-in"); len(s) > 0 {
+	if s := ctx.String("expires-in"); s != "" {
 		if expiresIn, err = time.ParseDuration(s); err != nil {
 			return errs.InvalidFlagValue(ctx, "expires-in", s, "")
 		}
 	}
-	if s := ctx.String("renew-period"); len(s) > 0 {
+	if s := ctx.String("renew-period"); s != "" {
 		if renewPeriod, err = time.ParseDuration(s); err != nil {
 			return errs.InvalidFlagValue(ctx, "renew-period", s, "")
 		}
@@ -269,7 +271,7 @@ func renewCertificateAction(ctx *cli.Context) error {
 	}
 
 	pidFile := ctx.String("pid-file")
-	if len(pidFile) > 0 {
+	if pidFile != "" {
 		pidB, err := os.ReadFile(pidFile)
 		if err != nil {
 			return errs.FileError(err, pidFile)
@@ -472,7 +474,7 @@ func (r *renewer) Renew(outFile string) (resp *api.SignResponse, err error) {
 		return nil, errors.Wrap(err, "error renewing certificate")
 	}
 
-	if resp.CertChainPEM == nil || len(resp.CertChainPEM) == 0 {
+	if len(resp.CertChainPEM) == 0 {
 		resp.CertChainPEM = []api.Certificate{resp.ServerPEM, resp.CaPEM}
 	}
 	var data []byte
@@ -503,7 +505,7 @@ func (r *renewer) Rekey(priv interface{}, outCert, outKey string, writePrivateKe
 	if err != nil {
 		return nil, errors.Wrap(err, "error rekeying certificate")
 	}
-	if resp.CertChainPEM == nil || len(resp.CertChainPEM) == 0 {
+	if len(resp.CertChainPEM) == 0 {
 		resp.CertChainPEM = []api.Certificate{resp.ServerPEM, resp.CaPEM}
 	}
 	var data []byte

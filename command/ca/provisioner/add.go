@@ -1,25 +1,29 @@
 package provisioner
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"net/url"
 	"os"
 	"strings"
 
 	"github.com/pkg/errors"
+	"github.com/urfave/cli"
+
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/ui"
+	"github.com/smallstep/linkedca"
+	"go.step.sm/crypto/jose"
+	"go.step.sm/crypto/pemutil"
+
 	"github.com/smallstep/cli/flags"
 	"github.com/smallstep/cli/internal/sliceutil"
 	"github.com/smallstep/cli/utils"
-	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/ui"
-	"go.step.sm/crypto/jose"
-	"go.step.sm/crypto/pemutil"
-	"go.step.sm/linkedca"
 )
 
 func addCommand() cli.Command {
@@ -32,6 +36,8 @@ func addCommand() cli.Command {
 [**--admin-cert**=<file>] [**--admin-key**=<file>]
 [**--admin-subject**=<subject>] [**--admin-provisioner**=<name>] [**--admin-password-file**=<file>]
 [**--ca-url**=<uri>] [**--root**=<file>] [**--context**=<name>] [**--ca-config**=<file>]
+[**--x509-template**=<file>] [**--x509-template-data**=<file>] [**--ssh-template**=<file>]
+[**--ssh-template-data**=<file>]
 
 ACME
 
@@ -41,6 +47,7 @@ ACME
 [**--admin-cert**=<file>] [**--admin-key**=<file>]
 [**--admin-subject**=<subject>] [**--admin-provisioner**=<name>] [**--admin-password-file**=<file>]
 [**--ca-url**=<uri>] [**--root**=<file>] [**--context**=<name>] [**--ca-config**=<file>]
+[**--x509-template**=<file>] [**--x509-template-data**=<file>]
 
 OIDC
 
@@ -51,6 +58,8 @@ OIDC
 [**--admin-cert**=<file>] [**--admin-key**=<file>]
 [**--admin-subject**=<subject>] [**--admin-provisioner**=<name>] [**--admin-password-file**=<file>]
 [**--ca-url**=<uri>] [**--root**=<file>] [**--context**=<name>] [**--ca-config**=<file>]
+[**--x509-template**=<file>] [**--x509-template-data**=<file>] [**--ssh-template**=<file>]
+[**--ssh-template-data**=<file>]
 
 X5C
 
@@ -58,6 +67,8 @@ X5C
 [**--admin-cert**=<file>] [**--admin-key**=<file>]
 [**--admin-subject**=<subject>] [**--admin-provisioner**=<name>] [**--admin-password-file**=<file>]
 [**--ca-url**=<uri>] [**--root**=<file>] [**--context**=<name>] [**--ca-config**=<file>]
+[**--x509-template**=<file>] [**--x509-template-data**=<file>] [**--ssh-template**=<file>]
+[**--ssh-template-data**=<file>]
 
 SSHPOP
 
@@ -73,14 +84,15 @@ Nebula
 [**--admin-subject**=<subject>] [**--admin-provisioner**=<name>] [**--admin-password-file**=<file>]
 [**--ca-url**=<uri>] [**--root**=<file>] [**--context**=<name>] [**--ca-config**=<file>]
 
-K8SSA
+K8SSA (Kubernetes Service Account)
 
 **step ca provisioner add** <name> **--type**=K8SSA [**--public-key**=<file>]
 [**--admin-cert**=<file>] [**--admin-key**=<file>]
 [**--admin-subject**=<subject>] [**--admin-provisioner**=<name>] [**--admin-password-file**=<file>]
 [**--ca-url**=<uri>] [**--root**=<file>] [**--context**=<name>] [**--ca-config**=<file>]
+[**--x509-template**=<file>] [**--x509-template-data**=<file>]
 
-IID
+IID (AWS/GCP/Azure)
 
 **step ca provisioner add** <name> **--type**=[AWS|Azure|GCP]
 [**--aws-account**=<id>] [**--gcp-service-account**=<name>] [**--gcp-project**=<name>]
@@ -88,18 +100,24 @@ IID
 [**--azure-audience**=<name>] [**--azure-subscription-id**=<id>]
 [**--azure-object-id**=<id>] [**--instance-age**=<duration>] [**--iid-roots**=<file>]
 [**--disable-custom-sans**] [**--disable-trust-on-first-use**]
+[**--disable-ssh-ca-user**] [**--disable-ssh-ca-host**]
 [**--admin-cert**=<file>] [**--admin-key**=<file>]
 [**--admin-subject**=<subject>] [**--admin-provisioner**=<name>] [**--admin-password-file**=<file>]
 [**--ca-url**=<uri>] [**--root**=<file>] [**--context**=<name>] [**--ca-config**=<file>]
+[**--x509-template**=<file>] [**--x509-template-data**=<file>] [**--ssh-template**=<file>]
+[**--ssh-template-data**=<file>]
 
 SCEP
 
 **step ca provisioner add** <name> **--type**=SCEP [**--force-cn**] [**--challenge**=<challenge>]
-[**--capabilities**=<capabilities>] [**--include-root**] [**--min-public-key-length**=<length>]
-[**--encryption-algorithm-identifier**=<id>]
-[**--admin-cert**=<file>] [**--admin-key**=<file>]
-[**--admin-subject**=<subject>] [**--admin-provisioner**=<name>] [**--admin-password-file**=<file>]
-[**--ca-url**=<uri>] [**--root**=<file>] [**--context**=<name>] [**--ca-config**=<file>]`,
+[**--capabilities**=<capabilities>] [**--include-root**] [**--exclude-intermediate**]
+[**--min-public-key-length**=<length>] [**--encryption-algorithm-identifier**=<id>]
+[**--scep-decrypter-certificate-file**=<file>] [**--scep-decrypter-key-file**=<file>]
+[**--scep-decrypter-key-uri**=<uri>] [**--scep-decrypter-key-password-file**=<file>]
+[**--admin-cert**=<file>] [**--admin-key**=<file>] [**--admin-subject**=<subject>]
+[**--admin-provisioner**=<name>] [**--admin-password-file**=<file>]
+[**--ca-url**=<uri>] [**--root**=<file>] [**--context**=<name>] [**--ca-config**=<file>]
+[**--x509-template**=<file>] [**--x509-template-data**=<file>]`,
 		Flags: []cli.Flag{
 			// General provisioner flags
 			typeFlag,
@@ -135,8 +153,13 @@ SCEP
 			// SCEP provisioner flags
 			scepCapabilitiesFlag,
 			scepIncludeRootFlag,
+			scepExcludeIntermediateFlag,
 			scepMinimumPublicKeyLengthFlag,
 			scepEncryptionAlgorithmIdentifierFlag,
+			scepDecrypterCertFileFlag,
+			scepDecrypterKeyFileFlag,
+			scepDecrypterKeyURIFlag,
+			scepDecrypterKeyPasswordFileFlag,
 
 			// Cloud provisioner flags
 			awsAccountFlag,
@@ -150,6 +173,8 @@ SCEP
 			instanceAgeFlag,
 			disableCustomSANsFlag,
 			disableTOFUFlag,
+			disableSSHCAUserFlag,
+			disableSSHCAHostFlag,
 
 			// Claims
 			x509TemplateFlag,
@@ -167,6 +192,7 @@ SCEP
 			sshHostDefaultDurFlag,
 			disableRenewalFlag,
 			allowRenewalAfterExpiryFlag,
+			disableSmallstepExtensionsFlag,
 			//enableX509Flag,
 			enableSSHFlag,
 
@@ -360,8 +386,9 @@ func addAction(ctx *cli.Context) (err error) {
 			HostDurations: &linkedca.Durations{},
 			Enabled:       !(ctx.IsSet("ssh") && !ctx.Bool("ssh")),
 		},
-		DisableRenewal:          ctx.Bool("disable-renewal"),
-		AllowRenewalAfterExpiry: ctx.Bool("allow-renewal-after-expiry"),
+		DisableRenewal:             ctx.Bool("disable-renewal"),
+		AllowRenewalAfterExpiry:    ctx.Bool("allow-renewal-after-expiry"),
+		DisableSmallstepExtensions: ctx.Bool("disable-smallstep-extensions"),
 	}
 
 	if ctx.IsSet("x509-min-dur") {
@@ -438,7 +465,7 @@ func createJWKDetails(ctx *cli.Context) (*linkedca.ProvisionerDetails, error) {
 		password string
 	)
 
-	if passwordFile := ctx.String("password-file"); len(passwordFile) > 0 {
+	if passwordFile := ctx.String("password-file"); passwordFile != "" {
 		password, err = utils.ReadStringPasswordFromFile(passwordFile)
 		if err != nil {
 			return nil, err
@@ -720,6 +747,13 @@ func createOIDCDetails(ctx *cli.Context) (*linkedca.ProvisionerDetails, error) {
 }
 
 func createAWSDetails(ctx *cli.Context) (*linkedca.ProvisionerDetails, error) {
+	if ctx.IsSet("disable-ssh-ca-user") {
+		return nil, errors.New("flag disable-ssh-ca-user is not supported for AWS IID provisioners")
+	}
+	if ctx.IsSet("disable-ssh-ca-host") {
+		return nil, errors.New("flag disable-ssh-ca-host is not supported for AWS IID provisioners")
+	}
+
 	d, err := parseInstanceAge(ctx)
 	if err != nil {
 		return nil, err
@@ -740,6 +774,13 @@ func createAWSDetails(ctx *cli.Context) (*linkedca.ProvisionerDetails, error) {
 }
 
 func createAzureDetails(ctx *cli.Context) (*linkedca.ProvisionerDetails, error) {
+	if ctx.IsSet("disable-ssh-ca-user") {
+		return nil, errors.New("flag disable-ssh-ca-user is not supported for Azure IID provisioners")
+	}
+	if ctx.IsSet("disable-ssh-ca-host") {
+		return nil, errors.New("flag disable-ssh-ca-host is not supported for Azure IID provisioners")
+	}
+
 	tenantID := ctx.String("azure-tenant")
 	if tenantID == "" {
 		return nil, errs.RequiredWithFlagValue(ctx, "type", ctx.String("type"), "azure-tenant")
@@ -766,6 +807,20 @@ func createGCPDetails(ctx *cli.Context) (*linkedca.ProvisionerDetails, error) {
 		return nil, err
 	}
 
+	var (
+		disableSSHCAUser *bool
+		disableSSHCAHost *bool
+	)
+
+	if ctx.IsSet("disable-ssh-ca-user") {
+		boolVal := ctx.Bool("disable-ssh-ca-user")
+		disableSSHCAUser = &boolVal
+	}
+	if ctx.IsSet("disable-ssh-ca-host") {
+		boolVal := ctx.Bool("disable-ssh-ca-host")
+		disableSSHCAHost = &boolVal
+	}
+
 	return &linkedca.ProvisionerDetails{
 		Data: &linkedca.ProvisionerDetails_GCP{
 			GCP: &linkedca.GCPProvisioner{
@@ -773,6 +828,8 @@ func createGCPDetails(ctx *cli.Context) (*linkedca.ProvisionerDetails, error) {
 				ProjectIds:             ctx.StringSlice("gcp-project"),
 				DisableCustomSans:      ctx.Bool("disable-custom-sans"),
 				DisableTrustOnFirstUse: ctx.Bool("disable-trust-on-first-use"),
+				DisableSshCaUser:       disableSSHCAUser,
+				DisableSshCaHost:       disableSSHCAHost,
 				InstanceAge:            d,
 			},
 		},
@@ -785,16 +842,47 @@ func createSCEPDetails(ctx *cli.Context) (*linkedca.ProvisionerDetails, error) {
 	if v := ctx.StringSlice("challenge"); len(v) > 0 {
 		challenge = v[0]
 	}
+	s := &linkedca.SCEPProvisioner{
+		ForceCn:                       ctx.Bool("force-cn"),
+		Challenge:                     challenge,
+		Capabilities:                  ctx.StringSlice("capabilities"),
+		MinimumPublicKeyLength:        int32(ctx.Int("min-public-key-length")),
+		IncludeRoot:                   ctx.Bool("include-root"),
+		ExcludeIntermediate:           ctx.Bool("exclude-intermediate"),
+		EncryptionAlgorithmIdentifier: int32(ctx.Int("encryption-algorithm-identifier")),
+	}
+	decrypter := &linkedca.SCEPDecrypter{}
+	if decrypterCertificateFile := ctx.String("scep-decrypter-certificate-file"); decrypterCertificateFile != "" {
+		data, err := parseSCEPDecrypterCertificate(decrypterCertificateFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed parsing certificate from %q: %w", decrypterCertificateFile, err)
+		}
+		decrypter.Certificate = data
+		s.Decrypter = decrypter
+	}
+	if decrypterKeyURI := ctx.String("scep-decrypter-key-uri"); decrypterKeyURI != "" {
+		decrypter.KeyUri = decrypterKeyURI
+		s.Decrypter = decrypter
+	}
+	if decrypterKeyFile := ctx.String("scep-decrypter-key-file"); decrypterKeyFile != "" {
+		data, err := readSCEPDecrypterKey(decrypterKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed reading decrypter key from %q: %w", decrypterKeyFile, err)
+		}
+		decrypter.Key = data
+		s.Decrypter = decrypter
+	}
+	if decrypterKeyPasswordFile := ctx.String("scep-decrypter-key-password-file"); decrypterKeyPasswordFile != "" {
+		decrypterKeyPassword, err := utils.ReadPasswordFromFile(decrypterKeyPasswordFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed reading decrypter key password from %q: %w", decrypterKeyPasswordFile, err)
+		}
+		decrypter.KeyPassword = decrypterKeyPassword
+		s.Decrypter = decrypter
+	}
 	return &linkedca.ProvisionerDetails{
 		Data: &linkedca.ProvisionerDetails_SCEP{
-			SCEP: &linkedca.SCEPProvisioner{
-				ForceCn:                       ctx.Bool("force-cn"),
-				Challenge:                     challenge,
-				Capabilities:                  ctx.StringSlice("capabilities"),
-				MinimumPublicKeyLength:        int32(ctx.Int("min-public-key-length")),
-				IncludeRoot:                   ctx.Bool("include-root"),
-				EncryptionAlgorithmIdentifier: int32(ctx.Int("encryption-algorithm-identifier")),
-			},
+			SCEP: s,
 		},
 	}, nil
 }
@@ -902,4 +990,49 @@ func parseCACertificates(filenames []string) ([][]byte, error) {
 		}
 	}
 	return pemCerts, nil
+}
+
+func parseSCEPDecrypterCertificate(filename string) ([]byte, error) {
+	certs, err := pemutil.ReadCertificateBundle(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading certificate from %q: %w", filename, err)
+	}
+	if len(certs) == 0 {
+		return nil, fmt.Errorf("no certificates found in %q", filename)
+	}
+	// TODO(hs): implement validation, such as key usage?
+	buf := bytes.Buffer{}
+	if err = pem.Encode(&buf, &pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: certs[0].Raw, // assumes the bundle is a certificate chain; using first cert as decrypter
+	}); err != nil {
+		return nil, fmt.Errorf("failed encoding certificate: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+func readSCEPDecrypterKey(filename string) ([]byte, error) {
+	b, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading %q: %w", filename, err)
+	}
+
+	if err := validateSCEPDecrypterKey(b); err != nil {
+		return nil, fmt.Errorf("failed decoding %q: %w", filename, err)
+	}
+
+	// TODO(hs): additional validation that this is an (encrypted) private key?
+
+	return b, err
+}
+
+func validateSCEPDecrypterKey(data []byte) error {
+	block, rest := pem.Decode(data)
+	switch {
+	case block == nil:
+		return errors.New("not a valid PEM encoded block")
+	case len(bytes.TrimSpace(rest)) > 0:
+		return errors.New("contains more than one PEM encoded block")
+	}
+	return nil
 }

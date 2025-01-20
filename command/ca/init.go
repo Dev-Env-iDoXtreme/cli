@@ -14,21 +14,20 @@ import (
 
 	"github.com/manifoldco/promptui"
 	"github.com/pkg/errors"
+	"github.com/urfave/cli"
+
 	"github.com/smallstep/certificates/cas/apiv1"
 	"github.com/smallstep/certificates/pki"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/step"
+	"github.com/smallstep/cli-utils/ui"
+	"go.step.sm/crypto/kms"
+	_ "go.step.sm/crypto/kms/azurekms" // enable azurekms
+	"go.step.sm/crypto/pemutil"
+
 	"github.com/smallstep/cli/flags"
 	"github.com/smallstep/cli/utils"
 	"github.com/smallstep/cli/utils/cautils"
-	"github.com/urfave/cli"
-
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/step"
-	"go.step.sm/cli-utils/ui"
-	"go.step.sm/crypto/kms"
-	"go.step.sm/crypto/pemutil"
-
-	// Enable azurekms
-	_ "go.step.sm/crypto/kms/azurekms"
 )
 
 func initCommand() cli.Command {
@@ -37,12 +36,12 @@ func initCommand() cli.Command {
 		Action: cli.ActionFunc(initAction),
 		Usage:  "initialize the CA PKI",
 		UsageText: `**step ca init**
-[**--root**=<file>] [**--key**=<file>] [**--pki**] [**--ssh**]
+[**--root**=<file>] [**--key**=<file>] [**--key-password-file**=<file>] [**--pki**] [**--ssh**]
 [**--helm**] [**--deployment-type**=<name>] [**--name**=<name>]
-[**--dns**=<dns>] [**--address**=<address>] [**--provisioner**=<name>] 
-[**--admin-subject**=<string>] [**--provisioner-password-file**=<file>] 
-[**--password-file**=<file>] [**--ra**=<type>] [**--kms**=<type>] 
-[**--with-ca-url**=<url>] [**--no-db**] [**--remote-management**] 
+[**--dns**=<dns>] [**--address**=<address>] [**--provisioner**=<name>]
+[**--admin-subject**=<string>] [**--provisioner-password-file**=<file>]
+[**--password-file**=<file>] [**--ra**=<type>] [**--kms**=<type>]
+[**--with-ca-url**=<url>] [**--no-db**] [**--remote-management**]
 [**--acme**] [**--context**=<name>] [**--profile**=<name>] [**--authority**=<name>]`,
 		Description: `**step ca init** command initializes a public key infrastructure (PKI) to be
  used by the Certificate Authority.`,
@@ -56,6 +55,10 @@ func initCommand() cli.Command {
 				Name:   "key",
 				Usage:  "The path of an existing key <file> of the root certificate authority.",
 				EnvVar: step.IgnoreEnvVar,
+			},
+			cli.StringFlag{
+				Name:  "key-password-file",
+				Usage: `The path to the <file> containing the password to decrypt the existing root certificate key.`,
 			},
 			cli.BoolFlag{
 				Name:  "pki",
@@ -240,10 +243,14 @@ func initAction(ctx *cli.Context) (err error) {
 	case root == "" && key != "":
 		return errs.RequiredWithFlag(ctx, "key", "root")
 	case root != "" && key != "":
+		opts := []pemutil.Options{}
+		if keyPasswordFile := ctx.String("key-password-file"); keyPasswordFile != "" {
+			opts = append(opts, pemutil.WithPasswordFile(keyPasswordFile))
+		}
 		if rootCrt, err = pemutil.ReadCertificate(root); err != nil {
 			return err
 		}
-		if rootKey, err = pemutil.Read(key); err != nil {
+		if rootKey, err = pemutil.Read(key, opts...); err != nil {
 			return err
 		}
 	case ra != "" && ra != apiv1.CloudCAS && ra != apiv1.StepCAS:
@@ -468,7 +475,7 @@ func initAction(ctx *cli.Context) (err error) {
 			if v, ok := keyManager.(interface{ ValidateName(s string) error }); ok {
 				validateFunc = v.ValidateName
 			} else {
-				validateFunc = func(s string) error {
+				validateFunc = func(_ string) error {
 					return nil
 				}
 			}

@@ -4,10 +4,12 @@ import (
 	"fmt"
 
 	"github.com/pkg/errors"
-	"github.com/smallstep/cli/flags"
 	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/command"
-	"go.step.sm/cli-utils/errs"
+
+	"github.com/smallstep/cli-utils/command"
+	"github.com/smallstep/cli-utils/errs"
+
+	"github.com/smallstep/cli/flags"
 )
 
 func init() {
@@ -69,8 +71,7 @@ complete -o bashdefault -o default -F _step_cli_bash_autocomplete step
 
 `
 
-var zsh = `# zsh completion for step
-#compdef step
+var zsh = `#compdef step
 
 _step() {
 
@@ -109,7 +110,11 @@ func Completion(ctx *cli.Context) error {
 	case "zsh":
 		fmt.Print(zsh)
 	case "fish":
-		fmt.Print(ctx.App.ToFishCompletion())
+		fish, err := ctx.App.ToFishCompletion()
+		if err != nil {
+			return fmt.Errorf("error creating fish completion: %w", err)
+		}
+		fmt.Print(fish)
 	default:
 		return errors.Errorf("unsupported shell %s", shell)
 	}

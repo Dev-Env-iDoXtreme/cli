@@ -2,7 +2,8 @@ package certificate
 
 import (
 	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/command"
+
+	"github.com/smallstep/cli-utils/command"
 )
 
 // Command returns the cli.Command for jwt and related subcommands.
@@ -70,12 +71,12 @@ Extract the public key from a PEM encoded certificate:
 $ step certificate key foo.crt
 '''
 
-Install a root certificate in the system truststore:
+Install a root certificate in the system's default trust store:
 '''
 $ step certificate install root-ca.crt
 '''
 
-Uninstall a root certificate from the system truststore:
+Uninstall a root certificate from the system's default trust store:
 '''
 $ step certificate uninstall root-ca.crt
 '''`,

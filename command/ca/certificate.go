@@ -5,15 +5,17 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
+	"github.com/urfave/cli"
+
+	"github.com/smallstep/cli-utils/command"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/step"
+	"github.com/smallstep/cli-utils/ui"
+	"go.step.sm/crypto/pemutil"
+
 	"github.com/smallstep/cli/flags"
 	"github.com/smallstep/cli/token"
 	"github.com/smallstep/cli/utils/cautils"
-	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/command"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/step"
-	"go.step.sm/cli-utils/ui"
-	"go.step.sm/crypto/pemutil"
 )
 
 func certificateCommand() cli.Command {
@@ -26,7 +28,7 @@ func certificateCommand() cli.Command {
 [**--not-before**=<time|duration>] [**--not-after**=<time|duration>]
 [**--san**=<SAN>] [**--set**=<key=value>] [**--set-file**=<file>]
 [**--acme**=<file>] [**--standalone**] [**--webroot**=<file>]
-[**--contact**=<email>] [**--http-listen**=<address>] [**--bundle**]
+[**--contact**=<email>] [**--http-listen**=<address>]
 [**--kty**=<type>] [**--curve**=<curve>] [**--size**=<size>] [**--console**]
 [**--x5c-cert**=<file>] [**--x5c-key**=<file>] [**--k8ssa-token-path**=<file>]
 [**--offline**] [**--password-file**] [**--ca-url**=<uri>] [**--root**=<file>]
@@ -191,7 +193,7 @@ multiple SANs. The '--san' flag and the '--token' flag are mutually exclusive.`,
 			flags.Force,
 			flags.Offline,
 			flags.PasswordFile,
-			consoleFlag,
+			flags.Console,
 			flags.KMSUri,
 			flags.X5cCert,
 			flags.X5cKey,

@@ -2,13 +2,15 @@ package jws
 
 import (
 	"os"
-	"strings"
 
 	"github.com/pkg/errors"
-	"github.com/smallstep/cli/utils"
 	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/errs"
+
+	"github.com/smallstep/cli-utils/errs"
 	"go.step.sm/crypto/jose"
+
+	"github.com/smallstep/cli/flags"
+	"github.com/smallstep/cli/utils"
 )
 
 func verifyCommand() cli.Command {
@@ -71,14 +73,8 @@ member its value must match <kid> or verification will fail.`,
 				Usage: `Displays the header, payload and signature as a JSON object. The payload will
 be encoded using Base64.`,
 			},
-			cli.BoolFlag{
-				Name:   "subtle",
-				Hidden: true,
-			},
-			cli.BoolFlag{
-				Name:   "insecure",
-				Hidden: true,
-			},
+			flags.SubtleHidden,
+			flags.InsecureHidden,
 		},
 	}
 }
@@ -99,7 +95,7 @@ func verifyAction(ctx *cli.Context) error {
 
 	tok, err := jose.ParseJWS(token)
 	if err != nil {
-		return errors.Errorf("error parsing token: %s", strings.TrimPrefix(err.Error(), "square/go-jose: "))
+		return errors.Errorf("error parsing token: %s", jose.TrimPrefix(err))
 	}
 
 	// We don't support multiple signatures
@@ -127,10 +123,10 @@ func verifyAction(ctx *cli.Context) error {
 	// Add parse options
 	var options []jose.Option
 	options = append(options, jose.WithUse("sig"))
-	if len(alg) > 0 {
+	if alg != "" {
 		options = append(options, jose.WithAlg(alg))
 	}
-	if len(kid) > 0 {
+	if kid != "" {
 		options = append(options, jose.WithKid(kid))
 	}
 	if !ctx.Bool("insecure") {

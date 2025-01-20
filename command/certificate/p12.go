@@ -1,20 +1,21 @@
 package certificate
 
 import (
-	"crypto/rand"
 	"crypto/x509"
 	"fmt"
 
 	"github.com/pkg/errors"
-	"github.com/smallstep/cli/flags"
-	"github.com/smallstep/cli/utils"
 	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/command"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/ui"
+	"software.sslmate.com/src/go-pkcs12"
+
+	"github.com/smallstep/cli-utils/command"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/ui"
 	"go.step.sm/crypto/pemutil"
 	"go.step.sm/crypto/x509util"
-	"software.sslmate.com/src/go-pkcs12"
+
+	"github.com/smallstep/cli/flags"
+	"github.com/smallstep/cli/utils"
 )
 
 func p12Command() cli.Command {
@@ -23,7 +24,8 @@ func p12Command() cli.Command {
 		Action: command.ActionFunc(p12Action),
 		Usage:  `package a certificate and keys into a .p12 file`,
 		UsageText: `step certificate p12 <p12-path> [<crt-path>] [<key-path>]
-[**--ca**=<file>] [**--password-file**=<file>]`,
+[**--ca**=<file>] [**--password-file**=<file>] [**--legacy**]
+[**--force**] [**--no-password**] [**--insecure**]`,
 		Description: `**step certificate p12** creates a .p12 (PFX / PKCS12)
 file containing certificates and keys. This can then be used to import
 into Windows / Firefox / Java applications.
@@ -56,7 +58,15 @@ Package a certificate and private key with an empty password:
 
 '''
 $ step certificate p12 --no-password --insecure foo.p12 foo.crt foo.key
-'''`,
+'''
+
+Package a certificate and private key using a legacy encoder,
+
+'''
+$ step certificate p12 --legacy foo.p12 foo.crt foo.key
+'''
+
+`,
 		Flags: []cli.Flag{
 			cli.StringSliceFlag{
 				Name: "ca",
@@ -69,6 +79,10 @@ multiple CAs or intermediates.`,
 				Usage: `The path to the <file> containing the password to encrypt the .p12 file.`,
 			},
 			flags.NoPassword,
+			cli.BoolFlag{
+				Name:  "legacy",
+				Usage: "Encodes PKCS#12 files using the algorithms that were traditionally used, PBE+SHA1+RC2 for certificates and PBE+SHA1+3DES for keys.",
+			},
 			flags.Force,
 			flags.Insecure,
 		},
@@ -85,6 +99,11 @@ func p12Action(ctx *cli.Context) error {
 	keyFile := ctx.Args().Get(2)
 	caFiles := ctx.StringSlice("ca")
 	hasKeyAndCert := crtFile != "" && keyFile != ""
+
+	encoder := pkcs12.Modern
+	if ctx.Bool("legacy") {
+		encoder = pkcs12.LegacyRC2
+	}
 
 	// If either key or cert are provided, both must be provided
 	if !hasKeyAndCert && (crtFile != "" || keyFile != "") {
@@ -150,7 +169,7 @@ func p12Action(ctx *cli.Context) error {
 		// Any remaining certs will be intermediates for the server
 		x509CAs = append(x509CAs, x509CertBundle[1:]...)
 
-		pkcs12Data, err = pkcs12.Encode(rand.Reader, key, x509Cert, x509CAs, password)
+		pkcs12Data, err = encoder.Encode(key, x509Cert, x509CAs, password)
 		if err != nil {
 			return errs.Wrap(err, "failed to encode PKCS12 data")
 		}
@@ -163,7 +182,7 @@ func p12Action(ctx *cli.Context) error {
 				FriendlyName: fmt.Sprintf("%s - %s", cert.Subject.String(), x509util.Fingerprint(cert)),
 			})
 		}
-		pkcs12Data, err = pkcs12.EncodeTrustStoreEntries(rand.Reader, certsWithFriendlyNames, password)
+		pkcs12Data, err = encoder.EncodeTrustStoreEntries(certsWithFriendlyNames, password)
 		if err != nil {
 			return errs.Wrap(err, "failed to encode PKCS12 data")
 		}

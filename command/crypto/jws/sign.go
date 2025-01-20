@@ -3,14 +3,14 @@ package jws
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/smallstep/cli/flags"
 	"github.com/smallstep/cli/utils"
 
 	"github.com/pkg/errors"
 	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/errs"
+
+	"github.com/smallstep/cli-utils/errs"
 	"go.step.sm/crypto/jose"
 	"go.step.sm/crypto/pemutil"
 )
@@ -151,16 +151,13 @@ of the JWK. When used with **--jwks** (a JWK Set) the <kid> value must match
 the **"kid"** member of one of the JWKs in the JWK Set.`,
 			},
 			cli.BoolFlag{
-				Name:   "subtle",
-				Hidden: true,
-			},
-			cli.BoolFlag{
 				Name:   "no-kid",
 				Hidden: true,
 			},
 			flags.PasswordFile,
 			flags.X5cCert,
 			flags.X5tCert,
+			flags.SubtleHidden,
 		},
 	}
 }
@@ -193,34 +190,34 @@ func signAction(ctx *cli.Context) error {
 	jwks := ctx.String("jwks")
 	kid := ctx.String("kid")
 	var isX5C bool
-	if len(x5cCertFile) > 0 {
+	if x5cCertFile != "" {
 		if x5cKeyFile == "" {
 			return errs.RequiredWithOrFlag(ctx, "x5c-cert", "key", "x5c-key")
 		}
-		if len(x5tCertFile) > 0 {
+		if x5tCertFile != "" {
 			return errs.MutuallyExclusiveFlags(ctx, "x5c-cert", "x5t-cert")
 		}
 		if ctx.IsSet("jwk") {
 			return errs.MutuallyExclusiveFlags(ctx, "x5c-cert", "jwk")
 		}
-		if len(jwks) > 0 {
+		if jwks != "" {
 			return errs.MutuallyExclusiveFlags(ctx, "x5c-cert", "jwks")
 		}
 		isX5C = true
 	}
 
 	var isX5T bool
-	if len(x5tCertFile) > 0 {
+	if x5tCertFile != "" {
 		if x5tKeyFile == "" {
 			return errs.RequiredWithOrFlag(ctx, "x5t-cert", "key", "x5t-key")
 		}
-		if len(x5cCertFile) > 0 {
+		if x5cCertFile != "" {
 			return errs.MutuallyExclusiveFlags(ctx, "x5t-cert", "x5c-cert")
 		}
 		if ctx.IsSet("jwk") {
 			return errs.MutuallyExclusiveFlags(ctx, "x5t-cert", "jwk")
 		}
-		if len(jwks) > 0 {
+		if jwks != "" {
 			return errs.MutuallyExclusiveFlags(ctx, "x5t-cert", "jwks")
 		}
 		isX5T = true
@@ -241,10 +238,10 @@ func signAction(ctx *cli.Context) error {
 	// Add parse options
 	var options []jose.Option
 	options = append(options, jose.WithUse("sig"))
-	if len(alg) > 0 {
+	if alg != "" {
 		options = append(options, jose.WithAlg(alg))
 	}
-	if len(kid) > 0 {
+	if kid != "" {
 		options = append(options, jose.WithKid(kid))
 	}
 	if isSubtle {
@@ -343,7 +340,7 @@ func signAction(ctx *cli.Context) error {
 
 	signed, err := signer.Sign(payload)
 	if err != nil {
-		return errors.Errorf("error signing payload: %s", strings.TrimPrefix(err.Error(), "square/go-jose: "))
+		return errors.Errorf("error signing payload: %s", jose.TrimPrefix(err))
 	}
 
 	raw, err := signed.CompactSerialize()

@@ -8,11 +8,15 @@ import (
 	//nolint:gosec // support for sha1 fingerprints
 	_ "crypto/sha1"
 
-	"github.com/smallstep/cli/flags"
+	"github.com/pkg/errors"
 	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/errs"
+
+	"github.com/smallstep/cli-utils/errs"
 	"go.step.sm/crypto/fingerprint"
 	"go.step.sm/crypto/pemutil"
+
+	"github.com/smallstep/cli/flags"
+	"github.com/smallstep/cli/utils"
 )
 
 func fingerprintCommand() cli.Command {
@@ -21,10 +25,10 @@ func fingerprintCommand() cli.Command {
 		Action: cli.ActionFunc(fingerprintAction),
 		Usage:  "print the fingerprint of a certificate",
 		UsageText: `**step certificate fingerprint** <crt-file>
-[**--bundle**] [**--roots**=<root-bundle>] [**--servername**=<servername>] 
+[**--bundle**] [**--roots**=<root-bundle>] [**--servername**=<servername>]
 [**--format**=<format>] [**--sha1**] [**--insecure**]`,
 		Description: `**step certificate fingerprint** reads a certificate and prints to STDOUT the
-certificate SHA256 of the raw certificate.
+certificate SHA256 of the raw certificate or certificate signing request.
 
 If <crt-file> contains multiple certificates (i.e., it is a certificate
 "bundle") the fingerprint of the first certificate in the bundle will be
@@ -55,6 +59,12 @@ Get the fingerprints for a remote certificate with its intermediate:
 $ step certificate fingerprint --bundle https://smallstep.com
 e2c4f12edfc1816cc610755d32e6f45d5678ba21ecda1693bb5b246e3c48c03d
 25847d668eb4f04fdd40b12b6b0740c567da7d024308eb6c2c96fe41d9de218d
+'''
+
+Get the fingerprint for a CSR using base64-url encoding without padding:
+'''
+$ step certificate fingerprint --format base64-url-raw hello.csr
+PJLNhtQoBE1yGN_ZKzr4Y2U5pyqIGiyyszkoz2raDOw
 '''`,
 		Flags: []cli.Flag{
 			cli.StringFlag{
@@ -93,20 +103,25 @@ debugging invalid certificates remotely.`,
 }
 
 func fingerprintAction(ctx *cli.Context) error {
-	if err := errs.NumberOfArguments(ctx, 1); err != nil {
+	if err := errs.MinMaxNumberOfArguments(ctx, 0, 1); err != nil {
 		return err
 	}
 
 	var (
+		crtFile    = ctx.Args().Get(0)
 		certs      []*x509.Certificate
 		serverName = ctx.String("servername")
 		roots      = ctx.String("roots")
 		bundle     = ctx.Bool("bundle")
 		insecure   = ctx.Bool("insecure")
-		crtFile    = ctx.Args().First()
 		format     = ctx.String("format")
 		useSHA1    = ctx.Bool("sha1")
 	)
+
+	// Use stdin if no argument is used.
+	if crtFile == "" {
+		crtFile = "-"
+	}
 
 	if useSHA1 && !insecure {
 		return errs.RequiredInsecureFlag(ctx, "sha")
@@ -126,9 +141,24 @@ func fingerprintAction(ctx *cli.Context) error {
 			return err
 		}
 	default:
-		certs, err = pemutil.ReadCertificateBundle(crtFile)
+		b, err := utils.ReadFile(crtFile)
 		if err != nil {
-			return err
+			return errors.Wrapf(err, "error reading file %s", crtFile)
+		}
+
+		var pemError *pemutil.InvalidPEMError
+		certs, err = pemutil.ParseCertificateBundle(b)
+		switch {
+		case errors.As(err, &pemError) && pemError.Type == pemutil.PEMTypeCertificate:
+			csr, err := pemutil.ParseCertificateRequest(b)
+			if err != nil {
+				return errors.Errorf("file %s does not contain any valid CERTIFICATE or CERTIFICATE REQUEST blocks", crtFile)
+			}
+			certs = []*x509.Certificate{
+				{Raw: csr.Raw},
+			}
+		case err != nil:
+			return fmt.Errorf("error parsing %s: %w", crtFile, err)
 		}
 	}
 

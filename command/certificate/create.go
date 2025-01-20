@@ -7,16 +7,18 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/smallstep/cli/flags"
-	"github.com/smallstep/cli/internal/cryptoutil"
-	"github.com/smallstep/cli/utils"
 	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/command"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/ui"
+
+	"github.com/smallstep/cli-utils/command"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/ui"
 	"go.step.sm/crypto/keyutil"
 	"go.step.sm/crypto/pemutil"
 	"go.step.sm/crypto/x509util"
+
+	"github.com/smallstep/cli/flags"
+	"github.com/smallstep/cli/internal/cryptoutil"
+	"github.com/smallstep/cli/utils"
 )
 
 const (
@@ -41,14 +43,15 @@ func createCommand() cli.Command {
 		Action: command.ActionFunc(createAction),
 		Usage:  "create a certificate or certificate signing request",
 		UsageText: `**step certificate create** <subject> <crt-file> <key-file>
-[**--kms**=<uri>] [**--csr**] [**--profile**=<profile>]
-[**--template**=<file>] [**--set**=<key=value>] [**--set-file**=<file>]
-[**--not-before**=<duration>] [**--not-after**=<duration>]
-[**--password-file**=<file>] [**--ca**=<issuer-cert>]
-[**--ca-key**=<issuer-key>] [**--ca-password-file**=<file>]
-[**--san**=<SAN>] [**--bundle**] [**--key**=<file>]
 [**--kty**=<type>] [**--curve**=<curve>] [**--size**=<size>]
-[**--no-password**] [**--insecure**]`,
+[**--csr**] [**--profile**=<profile>] [**--template**=<file>]
+[**--set**=<key=value>] [**--set-file**=<file>]
+[**--not-before**=<duration>] [**--not-after**=<duration>] [**--san**=<SAN>]
+[**--ca**=<issuer-cert>] [**--ca-kms**=<uri>]
+[**--ca-key**=<issuer-key>] [**--ca-password-file**=<file>]
+[**--kms**=<uri>] [**--key**=<file>] [**--password-file**=<file>]
+[**--bundle**] [**--skip-csr-signature**]
+[**--no-password**] [**--subtle**] [**--insecure**]`,
 		Description: `**step certificate create** generates a certificate or a
 certificate signing request (CSR) that can be signed later using 'step
 certificate sign' (or some other tool) to produce a certificate.
@@ -84,7 +87,7 @@ Here's the default template used for generating a leaf certificate:
 {
 	"subject": {{ toJson .Subject }},
 	"sans": {{ toJson .SANs }},
-{{- if typeIs "*rsa.PublicKey" .Insecure.CR.PublicKey }}
+{{- if typeIs "*_rsa.PublicKey" .Insecure.CR.PublicKey }}
 	"keyUsage": ["keyEncipherment", "digitalSignature"],
 {{- else }}
 	"keyUsage": ["digitalSignature"],
@@ -345,14 +348,39 @@ $ step kms create \
   'pkcs11:id=4001;object=intermediate-key'
 $ step certificate create \
   --profile intermediate-ca \
-  --kms 'pkcs11:module-path=/usr/local/lib/softhsm/libsofthsm2.so;token=smallstep?pin-value=password' \
+  --ca-kms 'pkcs11:module-path=/usr/local/lib/softhsm/libsofthsm2.so;token=smallstep?pin-value=password'
   --ca root_ca.crt --ca-key 'pkcs11:id=4000' \
+  --kms 'pkcs11:module-path=/usr/local/lib/softhsm/libsofthsm2.so;token=smallstep?pin-value=password' \
   --key 'pkcs11:id=4001' \
   'My KMS Intermediate' intermediate_ca.crt
 '''
+
+Create an intermediate certificate for an RSA decryption key in Google Cloud KMS, signed by a root stored on disk, using <step-kms-plugin>:
+'''
+$ step certificate create \
+  --profile intermediate-ca \
+  --ca root_ca.crt --ca-key root_ca_key \
+  --kms cloudkms: \
+  --key 'projects/myProjectID/locations/global/keyRings/myKeyRing/cryptoKeys/myKey/cryptoKeyVersions/1' \
+  --skip-csr-signature \
+  'My RSA Intermediate' intermediate_rsa_ca.crt
+'''
+
+Create an intermediate certificate for an RSA signing key in Google Cloud KMS, signed by a root stored in an HSM, using <step-kms-plugin>:
+'''
+$ step certificate create \
+  --profile intermediate-ca \
+  --ca-kms 'pkcs11:module-path=/usr/local/lib/softhsm/libsofthsm2.so;token=smallstep?pin-value=password' \
+  --ca root_ca.crt --ca-key 'pkcs11:id=4000' \
+  --kms cloudkms: \
+  --key 'projects/myProjectID/locations/global/keyRings/myKeyRing/cryptoKeys/myKey/cryptoKeyVersions/1' \
+  'My RSA Intermediate' intermediate_rsa_ca.crt
+'''
 `,
 		Flags: []cli.Flag{
-			flags.KMSUri,
+			flags.KTY,
+			flags.Size,
+			flags.Curve,
 			cli.BoolFlag{
 				Name:  "csr",
 				Usage: `Generate a certificate signing request (CSR) instead of a certificate.`,
@@ -384,34 +412,6 @@ $ step certificate create \
 			flags.TemplateSet,
 			flags.TemplateSetFile,
 			cli.StringFlag{
-				Name: "password-file",
-				Usage: `The path to the <file> containing the password to
-encrypt the new private key or decrypt the user submitted private key.`,
-			},
-			cli.StringFlag{
-				Name:  "ca",
-				Usage: `The certificate authority used to issue the new certificate (PEM file).`,
-			},
-			cli.StringFlag{
-				Name:  "ca-key",
-				Usage: `The certificate authority private key used to sign the new certificate (PEM file).`,
-			},
-			cli.StringFlag{
-				Name: "ca-password-file",
-				Usage: `The path to the <file> containing the password to
-decrypt the CA private key.`,
-			},
-			cli.StringFlag{
-				Name:  "key",
-				Usage: "The <file> of the private key to use instead of creating a new one (PEM file).",
-			},
-			cli.BoolFlag{
-				Name: "no-password",
-				Usage: `Do not ask for a password to encrypt the private key.
-Sensitive key material will be written to disk unencrypted. This is not
-recommended. Requires **--insecure** flag.`,
-			},
-			cli.StringFlag{
 				Name: "not-before",
 				Usage: `The <time|duration> set in the NotBefore property of the certificate. If a
 <time> is used it is expected to be in RFC 3339 format. If a <duration> is
@@ -432,20 +432,51 @@ unit suffix, such as "300ms", "-1.5h" or "2h45m". Valid time units are "ns",
 				Usage: `Add DNS or IP Address Subjective Alternative Names (SANs). Use the '--san'
 flag multiple times to configure multiple SANs.`,
 			},
+			cli.StringFlag{
+				Name:  "ca",
+				Usage: `The certificate authority used to issue the new certificate (PEM file).`,
+			},
+			cli.StringFlag{
+				Name:  "ca-kms",
+				Usage: "The <uri> to configure the KMS used for signing the certificate",
+			},
+			cli.StringFlag{
+				Name:  "ca-key",
+				Usage: `The certificate authority private key used to sign the new certificate (PEM file).`,
+			},
+			cli.StringFlag{
+				Name: "ca-password-file",
+				Usage: `The path to the <file> containing the password to
+decrypt the CA private key.`,
+			},
+			flags.KMSUri,
+			cli.StringFlag{
+				Name:  "key",
+				Usage: "The <file> of the private key to use instead of creating a new one (PEM file).",
+			},
+			cli.StringFlag{
+				Name: "password-file",
+				Usage: `The path to the <file> containing the password to
+encrypt the new private key or decrypt the user submitted private key.`,
+			},
+			cli.BoolFlag{
+				Name: "no-password",
+				Usage: `Do not ask for a password to encrypt the private key.
+Sensitive key material will be written to disk unencrypted. This is not
+recommended. Requires **--insecure** flag.`,
+			},
 			cli.BoolFlag{
 				Name: "bundle",
 				Usage: `Bundle the new leaf certificate with the signing certificate. This flag requires
 the **--ca** flag.`,
 			},
-			flags.KTY,
-			flags.Size,
-			flags.Curve,
+			cli.BoolFlag{
+				Name:  "skip-csr-signature",
+				Usage: "Skip creating and signing a CSR.",
+			},
 			flags.Force,
 			flags.Subtle,
-			cli.BoolFlag{
-				Name:   "insecure",
-				Hidden: true,
-			},
+			flags.InsecureHidden,
 		},
 	}
 }
@@ -485,15 +516,20 @@ func createAction(ctx *cli.Context) error {
 	}
 
 	var (
-		sans         = ctx.StringSlice("san")
-		profile      = ctx.String("profile")
-		templateFile = ctx.String("template")
-		bundle       = ctx.Bool("bundle")
-		subtle       = ctx.Bool("subtle")
+		sans             = ctx.StringSlice("san")
+		profile          = ctx.String("profile")
+		templateFile     = ctx.String("template")
+		bundle           = ctx.Bool("bundle")
+		subtle           = ctx.Bool("subtle")
+		skipCSRSignature = ctx.Bool("skip-csr-signature")
 	)
 
 	if ctx.IsSet("profile") && templateFile != "" {
 		return errs.IncompatibleFlagWithFlag(ctx, "profile", "template")
+	}
+
+	if ctx.Bool("csr") && skipCSRSignature {
+		return errs.IncompatibleFlagWithFlag(ctx, "csr", "skip-csr-signature")
 	}
 
 	// Read template if passed
@@ -512,7 +548,8 @@ func createAction(ctx *cli.Context) error {
 		return err
 	}
 
-	// Read or generate key pair
+	// Read or generate key pair.
+	// When the flag --key has a public key, priv will be nil.
 	pub, priv, err := parseOrCreateKey(ctx)
 	if err != nil {
 		return err
@@ -520,6 +557,9 @@ func createAction(ctx *cli.Context) error {
 
 	// Create certificate request
 	if ctx.Bool("csr") {
+		if priv == nil {
+			return errors.New("invalid value for flag --key: a private key is required")
+		}
 		if bundle {
 			return errs.IncompatibleFlagWithFlag(ctx, "bundle", "csr")
 		}
@@ -598,6 +638,12 @@ func createAction(ctx *cli.Context) error {
 		return errs.RequiredWithFlagValue(ctx, "profile", "self-signed", "subtle")
 	}
 
+	// When a public key is given with the flag --key, priv is nil and
+	// --skip-csr-signature is required.
+	if priv == nil && !skipCSRSignature {
+		return errors.New("flag '--skip-csr-signature' is required with a public key")
+	}
+
 	// Parse --ca and --ca-key flags and check when those flags are required.
 	parent, signer, err := parseSigner(ctx, priv)
 	if err != nil {
@@ -631,20 +677,31 @@ func createAction(ctx *cli.Context) error {
 		defaultValidity = defaultTemplatevalidity
 	}
 
-	// Create X.509 certificate used as base for the certificate
-	cr, err := x509util.CreateCertificateRequest(subject, sans, signer)
-	if err != nil {
-		return err
-	}
-
 	// Create X.509 certificate
 	templateData := x509util.CreateTemplateData(subject, sans)
 	templateData.SetUserData(userData)
-	certificate, err := x509util.NewCertificate(cr, x509util.WithTemplate(template, templateData))
-	if err != nil {
-		return err
+
+	var certTemplate = &x509.Certificate{}
+	if skipCSRSignature {
+		certTemplate.PublicKey = pub
+		certificate, err := x509util.NewCertificateFromX509(certTemplate, x509util.WithTemplate(template, templateData))
+		if err != nil {
+			return err
+		}
+		certTemplate = certificate.GetCertificate()
+	} else {
+		// Create X.509 certificate used as base for the certificate
+		cr, err := x509util.CreateCertificateRequest(subject, sans, priv)
+		if err != nil {
+			return err
+		}
+		certificate, err := x509util.NewCertificate(cr, x509util.WithTemplate(template, templateData))
+		if err != nil {
+			return err
+		}
+		certTemplate = certificate.GetCertificate()
 	}
-	certTemplate := certificate.GetCertificate()
+
 	if parent == nil {
 		parent = certTemplate
 	}
@@ -684,7 +741,7 @@ func createAction(ctx *cli.Context) error {
 	}
 
 	// Save key and certificate request
-	if keyFile != "" && !cryptoutil.IsKMSSigner(priv) {
+	if keyFile != "" && priv != nil && !cryptoutil.IsKMSSigner(priv) {
 		if err := savePrivateKey(ctx, keyFile, priv, noPass); err != nil {
 			return err
 		}
@@ -746,17 +803,25 @@ func parseOrCreateKey(ctx *cli.Context) (crypto.PublicKey, crypto.Signer, error)
 		opts = append(opts, pemutil.WithPasswordFile(passFile))
 	}
 
+	var pub crypto.PublicKey
+	var signer crypto.Signer
+
 	signer, err := cryptoutil.CreateSigner(kms, keyFile, opts...)
 	if err != nil {
-		return nil, nil, err
+		// TODO: check sentinel error; if it's not a signer, it could be a public key instead
+		pub, err = cryptoutil.PublicKey(kms, keyFile, opts...)
+		if err != nil {
+			return nil, nil, err
+		}
+	} else {
+		pub = signer.Public()
+		// Make sure we can sign X509 certificates with it.
+		if !cryptoutil.IsX509Signer(signer) {
+			return nil, nil, errs.InvalidFlagValueMsg(ctx, "key", keyFile, "the given key cannot sign X509 certificates")
+		}
 	}
 
-	// Make sure we can sign X509 certificates with it.
-	if !cryptoutil.IsX509Signer(signer) {
-		return nil, nil, errs.InvalidFlagValueMsg(ctx, "key", keyFile, "the given key cannot sign X509 certificates")
-	}
-
-	return signer.Public(), signer, nil
+	return pub, signer, nil
 }
 
 // parseSigner returns the parent certificate and key for leaf and intermediate
@@ -766,9 +831,9 @@ func parseSigner(ctx *cli.Context, defaultSigner crypto.Signer) (*x509.Certifica
 	var (
 		caCert   = ctx.String("ca")
 		caKey    = ctx.String("ca-key")
+		caKMS    = ctx.String("ca-kms")
 		profile  = ctx.String("profile")
 		template = ctx.String("template")
-		kms      = ctx.String("kms")
 	)
 
 	// Check required flags when profile is used.
@@ -819,7 +884,7 @@ func parseSigner(ctx *cli.Context, defaultSigner crypto.Signer) (*x509.Certifica
 		opts = append(opts, pemutil.WithPasswordFile(passFile))
 	}
 
-	signer, err := cryptoutil.CreateSigner(kms, caKey, opts...)
+	signer, err := cryptoutil.CreateSigner(caKMS, caKey, opts...)
 	if err != nil {
 		return nil, nil, err
 	}

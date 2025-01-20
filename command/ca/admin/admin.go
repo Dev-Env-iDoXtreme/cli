@@ -4,12 +4,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/smallstep/certificates/ca"
 	"github.com/urfave/cli"
 
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/ui"
-	"go.step.sm/linkedca"
+	"github.com/smallstep/certificates/ca"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/ui"
+	"github.com/smallstep/linkedca"
 )
 
 // Command returns the jwk subcommand.

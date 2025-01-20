@@ -5,11 +5,14 @@ import (
 	"os"
 
 	"github.com/pkg/errors"
-	"github.com/smallstep/cli/utils"
 	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/ui"
+
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/ui"
 	"go.step.sm/crypto/jose"
+
+	"github.com/smallstep/cli/flags"
+	"github.com/smallstep/cli/utils"
 )
 
 func encryptCommand() cli.Command {
@@ -147,10 +150,7 @@ applications where more than one JWE payload type may be present. This
 parameter is ignored by JWE implementations, but may be processed by
 applications that use JWE.`,
 			},
-			cli.BoolFlag{
-				Name:   "subtle",
-				Hidden: true,
-			},
+			flags.SubtleHidden,
 		},
 	}
 }
@@ -208,7 +208,7 @@ func encryptAction(ctx *cli.Context) error {
 	if len(alg) > 0 {
 		options = append(options, jose.WithAlg(string(alg)))
 	}
-	if len(kid) > 0 {
+	if kid != "" {
 		options = append(options, jose.WithKid(kid))
 	}
 	if isSubtle {

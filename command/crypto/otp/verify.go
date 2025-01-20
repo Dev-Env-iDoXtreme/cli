@@ -11,10 +11,12 @@ import (
 	"github.com/pkg/errors"
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
+	"github.com/urfave/cli"
+
+	"github.com/smallstep/cli-utils/errs"
+
 	"github.com/smallstep/cli/flags"
 	"github.com/smallstep/cli/utils"
-	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/errs"
 )
 
 func verifyCommand() cli.Command {
@@ -63,10 +65,7 @@ as "300ms", "-1.5h" or "2h45m". Valid time units are "ns", "us" (or "µs"), "ms"
 "s", "m", "h". A <duration> value is added to the current time. An empty
 <time|duration> defaults to "time.Now()".`,
 			},
-			cli.BoolFlag{
-				Name:   "insecure",
-				Hidden: true,
-			},
+			flags.InsecureHidden,
 		},
 	}
 }
@@ -107,7 +106,7 @@ func verifyAction(ctx *cli.Context) error {
 
 		secret = otpKey.Secret()
 		// period query param
-		if periodStr := q.Get("period"); len(periodStr) > 0 {
+		if periodStr := q.Get("period"); periodStr != "" {
 			period64, err := strconv.ParseUint(periodStr, 10, 0)
 			if err != nil {
 				return errors.Wrap(err, "error parsing period from url")
@@ -115,7 +114,7 @@ func verifyAction(ctx *cli.Context) error {
 			period = uint(period64)
 		}
 		// digits query param
-		if digitStr := q.Get("digits"); len(digitStr) > 0 {
+		if digitStr := q.Get("digits"); digitStr != "" {
 			digits64, err := strconv.ParseInt(digitStr, 10, 0)
 			if err != nil {
 				return errors.Wrap(err, "error parsing period from url")
@@ -124,7 +123,7 @@ func verifyAction(ctx *cli.Context) error {
 		}
 		// algorithm query param
 		algFromQuery := q.Get("algorithm")
-		if len(algFromQuery) > 0 {
+		if algFromQuery != "" {
 			algStr = algFromQuery
 		}
 	}

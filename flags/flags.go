@@ -10,12 +10,14 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/smallstep/certificates/api"
-	"github.com/smallstep/cli/utils"
 	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/step"
+
+	"github.com/smallstep/certificates/api"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/step"
 	"go.step.sm/crypto/fingerprint"
+
+	"github.com/smallstep/cli/utils"
 )
 
 var (
@@ -69,12 +71,25 @@ unset, default is P-256 for EC keys and Ed25519 for OKP keys.
 
 	// Subtle is the flag required for delicate operations.
 	Subtle = cli.BoolFlag{
-		Name: "subtle",
+		Name:  "subtle",
+		Usage: "Allow delicate operations.",
+	}
+
+	// SubtleHidden is the hidden flag required for delicate operations.
+	SubtleHidden = cli.BoolFlag{
+		Name:   "subtle",
+		Hidden: true,
 	}
 
 	// Insecure is the flag required on insecure operations
 	Insecure = cli.BoolFlag{
 		Name: "insecure",
+	}
+
+	// InsecureHidden is the hidden flag required on insecure operations.
+	InsecureHidden = cli.BoolFlag{
+		Name:   "insecure",
+		Hidden: true,
 	}
 
 	// K8sSATokenPathFlag is an optional flag that allows modification of the
@@ -366,6 +381,19 @@ be stored in the 'sshpop' header.`,
 be stored in the 'nebula' header.`,
 	}
 
+	// Confirmation is a cli.Flag used to add a confirmation claim in the token.
+	Confirmation = cli.StringFlag{
+		Name:  "cnf",
+		Usage: `The <fingerprint> of the CSR to restrict this token for.`,
+	}
+
+	// ConfirmationFile is a cli.Flag used to add a confirmation claim in the
+	// tokens. It will add a confirmation kid with the fingerprint of the CSR.
+	ConfirmationFile = cli.StringFlag{
+		Name:  "cnf-file",
+		Usage: `The CSR <file> to restrict this token for.`,
+	}
+
 	// Team is a cli.Flag used to pass the team ID.
 	Team = cli.StringFlag{
 		Name:  "team",
@@ -448,6 +476,16 @@ flag exists so it can be configured in $STEPPATH/config/defaults.json.`,
 	AttestationURI = cli.StringFlag{
 		Name:  "attestation-uri",
 		Usage: "The KMS <uri> used for attestation.",
+	}
+
+	Comment = cli.StringFlag{
+		Name:  "comment",
+		Usage: "The comment used when adding the certificate to an agent. Defaults to the subject if not provided.",
+	}
+
+	Console = cli.BoolFlag{
+		Name:  "console",
+		Usage: `Complete the flow while remaining inside the terminal.`,
 	}
 )
 

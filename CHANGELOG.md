@@ -26,7 +26,208 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ---
 
-## [Unreleased]
+## [0.28.2] - 2024-11-20
+
+### Fixed
+
+- Broken release process
+
+
+## [0.28.1] - 2024-11-19
+
+### Changed
+
+- Updated smallstep/certinfo package (smallstep/cli#1309)
+
+
+## [0.28.0] - 2024-10-29
+
+### Added
+
+- disableSSHCAUser and disableSSHCAHost options to GCP provisioner create and update commands (smallstep/cli#1305)
+- Support programmatically opening browser on Android devices (smallstep/cli#1301)
+
+### Fixed
+
+- Fix --context being ignored in commands that rely on certificates (smallstep/cli#1301)
+
+
+## [0.27.5] - 2024-10-17
+
+### Added
+
+- Add `--remove-scope` flag to provisioner update command. Removes the given
+  scope, used to validate the scopes extension in an OpenID Connect token (smallstep/cli#1287)
+
+
+## [0.27.4] - 2024-09-13
+
+### Added
+
+- Support for signing and publishing RPM and Deb packages to GCP Artifact Registry (smallstep/cli#1246)
+
+### Changed
+
+- Update Release download URLs for RPM and DEB packages with new file name formats (smallstep/cli#1256)
+
+### Fixed
+
+- Parse crlEntryExtensions in CRLs (smallstep/cli#1262)
+- PowerShell 5.1 CLI crashes in Windows 11 (smallstep/cli#1257)
+
+### Notes
+
+- Skipping 0.27.3 to synchronize with smallstep/certificates
+
+
+## [0.27.2] - 2024-07-18
+
+### Added
+
+- `console` flag to SSH commands (smallstep/cli#1238)
+- Upload FreeBSD build to S3 (smallstep/cli#1239)
+
+
+## [0.27.1] - 2024-07-11
+
+### Fixed
+
+- Broken release process
+
+
+## [0.27.0] - 2024-07-11
+
+### Changed
+
+- Makefile: install to /usr/local/bin, not /usr/bin (smallstep/cli#1214)
+
+### Fixed
+
+- Set proper JOSE algorithm for Ed25519 keys (smallstep/cli#1208)
+- Makefile: usage of install command line flags on MacOS (smallstep/cli#1212)
+- Restore operation of '--bundle' flag in certificate inspect (smallstep/cli#1215)
+- Fish completion (smallstep/cli#1222)
+- Restore operation of inspect CSR from STDIN (smallstep/cli#1232)
+
+### Security
+
+
+## [0.26.2] - 2024-06-13
+
+### Added
+
+- Options for auth-params and scopes to OIDC token generator (smallstep/cli#1154)
+- --kty, --curve, and --size to ssh commands (login, certificate) (smallstep/cli#1156)
+- Stdin input for SSH needs-renewal (smallstep/cli#1157)
+- Allow users to define certificate comment in SSH agent (smallstep/cli#1158)
+- Add OCSP and CRL support to certificate verify (smallstep/cli#1161)
+
+
+## [0.26.1] - 2024-04-22
+
+### Added
+
+- Ability to output inspected CSR in PEM format (smallstep/cli#1153)
+
+### Fixed
+
+- Allow 'certificate inspect' to parse PEM files containig extraneous data (smallstep/cli#1153)
+
+
+## [v0.26.0] - 2024-03-27
+
+### Added
+
+- Sending of (an automatically generated) request identifier in the X-Request-Id header (smallstep/cli#1120)
+
+### Changed
+
+- Upgrade certinfo (smallstep/cli#1129)
+- Upgrade other dependencies
+
+### Fixed
+
+- OIDC flows failing using Chrome and other Chromium based browsers (smallstep/cli#1136)
+
+### Security
+
+- Upgrade to using cosign v2 for signing artifacts
+
+## [v0.25.2] - 2024-01-19
+
+### Added
+
+- Add support for Nebula certificates using ECDSA P-256 (smallstep/cli#1085)
+
+### Changed
+
+- Upgrade docker image using Debian to Bookworm (smallstep/cli#1080)
+- Upgrade dependencies, including go-jose to v3 (smallstep/cli#1086)
+
+## [v0.25.1] - 2023-11-28
+
+### Added
+
+- Add `step crypto rand` command in (smallstep/cli#1054)
+- Support for custom TPM device name in `--attestation-uri` flag in (smallstep/cli#1044)
+
+### Changed
+
+- Ignore BOM when reading files in (smallstep/cli#1045)
+- Upgraded `truststore` to fix installing certificates on certain Linux systems in (smallstep/cli#1053)
+
+### Fixed
+
+- Scoop and WinGet releases
+- Command completion for `zsh` in (smallstep/cli#1055)
+
+## [v0.25.0] - 2023-09-26
+
+### Added
+
+- Add support for provisioner claim `disableSmallstepExtensions`
+  (smallstep/cli#986)
+- Add support for PowerShell plugins on Windows (smallstep/cli#992)
+- Create API token using team slug (smallstep/cli#980)
+- Detect OIDC tokens issued by Kubernetes (smallstep/cli#953)
+- Add support for Smallstep Managed Endpoint X509 extension
+  (smallstep/cli#989)
+- Support signing a certificate for a private key that can only be used for 
+  encryption with the `--skip-csr-signature` flag in `step certificate create`. 
+  Some KMSs restrict key usage to a single type of cryptographic operation. 
+  This blocks RSA decryption keys from being used to sign a CSR for their public 
+  key. Using the `--skip-csr-signature` flag, the public key is used directly 
+  with a certificate template, removing the need for the CSR signature.
+- Add all AWS identity document certificates (smallstep/certificates#1510)
+- Add SCEP decrypter configuration flags (smallstep/cli#950)
+- Add detection of OIDC tokens issued by Kubernetes (smallstep/cli#953)
+- Add unversioned release artifacts to build (smallstep/cli#965)
+
+### Changed
+
+- Increase PBKDF2 iterations to 600k (smallstep/cli#949)
+- `--kms` flag is no longer used for the CA (signing) key for 
+`step certificate create`. It was replaced by the `--ca-kms` flag 
+(smallstep/cli#942).
+- Hide `step oauth command` on failure (smallstep/cli#993)
+
+### Fixed
+
+- Look for Windows plugins with executable extensions
+  (smallstep/certificates#976)
+- Fix empty ca.json with invalid template data (smallstep/certificates#1501)
+- Fix interactive prompt on docker builds (smallstep/cli#963)
+- `step certificate fingerprint` correctly parse PEM files with non-PEM header
+  (smallstep/crypto#311)
+- `step certificate format` correctly parse PEM files with non-PEM header
+  (smallstep/cli#1006)
+- Fix TOFU flag in `ca provisioner update` (smallstep/cli#941)
+- Make `--team` incompatible with `--fingerprint` and `--ca-url` in 
+  `step ca bootstrap (smallstep/cli#1017)
+
+### Remove
+
+- Remove automatic creation of the step path (smallstep/certificates#991)
 
 ## [v0.24.4] - 2023-05-11
 

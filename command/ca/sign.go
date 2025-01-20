@@ -5,22 +5,24 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
+	"github.com/urfave/cli"
+
 	"github.com/smallstep/certificates/api"
+	"github.com/smallstep/cli-utils/command"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/ui"
+	"go.step.sm/crypto/pemutil"
+
 	"github.com/smallstep/cli/flags"
 	"github.com/smallstep/cli/token"
 	"github.com/smallstep/cli/utils/cautils"
-	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/command"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/ui"
-	"go.step.sm/crypto/pemutil"
 )
 
 func signCertificateCommand() cli.Command {
 	return cli.Command{
 		Name:   "sign",
 		Action: command.ActionFunc(signCertificateAction),
-		Usage:  "generate a new certificate signing a certificate request",
+		Usage:  "generate a new certificate from signing a certificate request",
 		UsageText: `**step ca sign** <csr-file> <crt-file>
 [**--token**=<token>] [**--issuer**=<name>] [**--provisioner-password-file=<file>]
 [**--not-before**=<time|duration>] [**--not-after**=<time|duration>]
@@ -124,7 +126,7 @@ $ step ca sign foo.csr foo.crt \
 			flags.Force,
 			flags.Offline,
 			flags.PasswordFile,
-			consoleFlag,
+			flags.Console,
 			flags.KMSUri,
 			flags.X5cCert,
 			flags.X5cKey,
@@ -175,7 +177,7 @@ func signCertificateAction(ctx *cli.Context) error {
 	}
 
 	// certificate flow unifies online and offline flows on a single api
-	flow, err := cautils.NewCertificateFlow(ctx)
+	flow, err := cautils.NewCertificateFlow(ctx, cautils.WithCertificateRequest(csr))
 	if err != nil {
 		return err
 	}

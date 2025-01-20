@@ -11,22 +11,24 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"github.com/urfave/cli"
+	"golang.org/x/crypto/blake2b"
+	"golang.org/x/crypto/ssh"
+
 	"github.com/smallstep/certificates/api"
 	"github.com/smallstep/certificates/authority/provisioner"
 	"github.com/smallstep/certificates/ca"
 	"github.com/smallstep/certificates/ca/identity"
+	"github.com/smallstep/cli-utils/command"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/ui"
+	"go.step.sm/crypto/keyutil"
+	"go.step.sm/crypto/pemutil"
+
 	"github.com/smallstep/cli/flags"
 	"github.com/smallstep/cli/internal/sshutil"
 	"github.com/smallstep/cli/utils"
 	"github.com/smallstep/cli/utils/cautils"
-	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/command"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/ui"
-	"go.step.sm/crypto/keyutil"
-	"go.step.sm/crypto/pemutil"
-	"golang.org/x/crypto/blake2b"
-	"golang.org/x/crypto/ssh"
 )
 
 func certificateCommand() cli.Command {
@@ -37,10 +39,11 @@ func certificateCommand() cli.Command {
 		UsageText: `**step ssh certificate** <key-id> <key-file>
 [**--host**] [--**host-id**] [**--sign**] [**--principal**=<string>]
 [**--password-file**=<file>] [**--provisioner-password-file**=<file>]
-[**--add-user**] [**--not-before**=<time|duration>]
+[**--add-user**] [**--not-before**=<time|duration>] [**--comment**=<comment>]
 [**--not-after**=<time|duration>] [**--token**=<token>] [**--issuer**=<name>]
-[**--no-password**] [**--insecure**] [**--force**] [**--x5c-cert**=<file>]
+[**--console**] [**--no-password**] [**--insecure**] [**--force**] [**--x5c-cert**=<file>]
 [**--x5c-key**=<file>] [**--k8ssa-token-path**=<file>] [**--no-agent**]
+[**--kty**=<key-type>] [**--curve**=<curve>] [**--size**=<size>]
 [**--ca-url**=<uri>] [**--root**=<file>] [**--context**=<name>]`,
 
 		Description: `**step ssh certificate** command generates an SSH key pair and creates a
@@ -150,7 +153,20 @@ $ step ssh certificate --principal max --principal mariano --sign \
 Generate a new key pair and a certificate using a given token:
 '''
 $ step ssh certificate --token $TOKEN mariano@work id_ecdsa
+'''
+
+Create an EC pair with curve P-521 and certificate:
+
+'''
+$  step ssh certificate --kty EC --curve "P-521" mariano@work id_ecdsa
+'''
+
+Create an Octet Key Pair with curve Ed25519 and certificate:
+
+'''
+$  step ssh certificate --kty OKP --curve Ed25519 mariano@work id_ed25519
 '''`,
+
 		Flags: []cli.Flag{
 			flags.Force,
 			flags.Insecure,
@@ -162,6 +178,7 @@ $ step ssh certificate --token $TOKEN mariano@work id_ecdsa
 			flags.Token,
 			flags.TemplateSet,
 			flags.TemplateSetFile,
+			flags.Console,
 			sshAddUserFlag,
 			sshHostFlag,
 			sshHostIDFlag,
@@ -170,6 +187,10 @@ $ step ssh certificate --token $TOKEN mariano@work id_ecdsa
 			sshPrivateKeyFlag,
 			sshProvisionerPasswordFlag,
 			sshSignFlag,
+			flags.KTY,
+			flags.Curve,
+			flags.Size,
+			flags.Comment,
 			flags.KMSUri,
 			flags.X5cCert,
 			flags.X5cKey,
@@ -202,6 +223,11 @@ func certificateAction(ctx *cli.Context) error {
 	pubFile := baseName + ".pub"
 	crtFile := baseName + "-cert.pub"
 
+	comment := ctx.String("comment")
+	if comment == "" {
+		comment = subject
+	}
+
 	// Flags
 	token := ctx.String("token")
 	isHost := ctx.Bool("host")
@@ -219,6 +245,11 @@ func certificateAction(ctx *cli.Context) error {
 		return err
 	}
 	templateData, err := flags.ParseTemplateData(ctx)
+	if err != nil {
+		return err
+	}
+
+	kty, curve, size, err := utils.GetKeyDetailsFromCLI(ctx, insecure, "kty", "curve", "size")
 	if err != nil {
 		return err
 	}
@@ -267,7 +298,43 @@ func certificateAction(ctx *cli.Context) error {
 		}
 	}
 
-	flow, err := cautils.NewCertificateFlow(ctx)
+	var (
+		sshPub      ssh.PublicKey
+		pub, priv   interface{}
+		flowOptions []cautils.Option
+	)
+
+	if isSign {
+		// Use public key supplied as input.
+		in, err := utils.ReadFile(keyFile)
+		if err != nil {
+			return err
+		}
+
+		sshPub, _, _, _, err = ssh.ParseAuthorizedKey(in)
+		if err != nil {
+			return errors.Wrap(err, "error parsing ssh public key")
+		}
+		if sshPrivKeyFile != "" {
+			if priv, err = pemutil.Read(sshPrivKeyFile); err != nil {
+				return errors.Wrap(err, "error parsing private key")
+			}
+		}
+		flowOptions = append(flowOptions, cautils.WithSSHPublicKey(sshPub))
+	} else {
+		// Generate keypair
+		pub, priv, err = keyutil.GenerateKeyPair(kty, curve, size)
+		if err != nil {
+			return err
+		}
+
+		sshPub, err = ssh.NewPublicKey(pub)
+		if err != nil {
+			return errors.Wrap(err, "error creating public key")
+		}
+	}
+
+	flow, err := cautils.NewCertificateFlow(ctx, flowOptions...)
 	if err != nil {
 		return err
 	}
@@ -353,43 +420,11 @@ func certificateAction(ctx *cli.Context) error {
 		identityKey = key
 	}
 
-	var sshPub ssh.PublicKey
-	var pub, priv interface{}
-
-	if isSign {
-		// Use public key supplied as input.
-		in, err := utils.ReadFile(keyFile)
-		if err != nil {
-			return err
-		}
-
-		sshPub, _, _, _, err = ssh.ParseAuthorizedKey(in)
-		if err != nil {
-			return errors.Wrap(err, "error parsing ssh public key")
-		}
-		if len(sshPrivKeyFile) > 0 {
-			if priv, err = pemutil.Read(sshPrivKeyFile); err != nil {
-				return errors.Wrap(err, "error parsing private key")
-			}
-		}
-	} else {
-		// Generate keypair
-		pub, priv, err = keyutil.GenerateDefaultKeyPair()
-		if err != nil {
-			return err
-		}
-
-		sshPub, err = ssh.NewPublicKey(pub)
-		if err != nil {
-			return errors.Wrap(err, "error creating public key")
-		}
-	}
-
 	var sshAuPub ssh.PublicKey
 	var sshAuPubBytes []byte
 	var auPub, auPriv interface{}
 	if isAddUser {
-		auPub, auPriv, err = keyutil.GenerateDefaultKeyPair()
+		auPub, auPriv, err = keyutil.GenerateKeyPair(kty, curve, size)
 		if err != nil {
 			return err
 		}
@@ -480,7 +515,7 @@ func certificateAction(ctx *cli.Context) error {
 			ui.Printf(`{{ "%s" | red }} {{ "SSH Agent:" | bold }} %v`+"\n", ui.IconBad, err)
 		} else {
 			defer agent.Close()
-			if err := agent.AddCertificate(subject, resp.Certificate.Certificate, priv); err != nil {
+			if err := agent.AddCertificate(comment, resp.Certificate.Certificate, priv); err != nil {
 				ui.Printf(`{{ "%s" | red }} {{ "SSH Agent:" | bold }} %v`+"\n", ui.IconBad, err)
 			} else {
 				ui.PrintSelected("SSH Agent", "yes")

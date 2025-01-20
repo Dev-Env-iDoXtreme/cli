@@ -7,10 +7,13 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/smallstep/cli/utils"
 	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/errs"
+
+	"github.com/smallstep/cli-utils/errs"
 	"go.step.sm/crypto/jose"
+
+	"github.com/smallstep/cli/flags"
+	"github.com/smallstep/cli/utils"
 )
 
 func verifyCommand() cli.Command {
@@ -90,17 +93,11 @@ member its value must match <kid> or verification will fail.`,
 				Usage: `The path to the <file> containing the password to decrypt the key.`,
 			},
 			cli.BoolFlag{
-				Name:   "subtle",
-				Hidden: true,
-			},
-			cli.BoolFlag{
 				Name:   "no-exp-check",
 				Hidden: true,
 			},
-			cli.BoolFlag{
-				Name:   "insecure",
-				Hidden: true,
-			},
+			flags.SubtleHidden,
+			flags.InsecureHidden,
 		},
 	}
 }
@@ -126,7 +123,7 @@ func verifyAction(ctx *cli.Context) error {
 
 	tok, err := jose.ParseSigned(token)
 	if err != nil {
-		return errors.Errorf("error parsing token: %s", strings.TrimPrefix(err.Error(), "square/go-jose: "))
+		return errors.Errorf("error parsing token: %s", jose.TrimPrefix(err))
 	}
 
 	// Validate key, jwks and kid
@@ -167,10 +164,10 @@ func verifyAction(ctx *cli.Context) error {
 	// Add parse options
 	var options []jose.Option
 	options = append(options, jose.WithUse("sig"))
-	if len(alg) > 0 {
+	if alg != "" {
 		options = append(options, jose.WithAlg(alg))
 	}
-	if len(kid) > 0 {
+	if kid != "" {
 		options = append(options, jose.WithKid(kid))
 	}
 	if isSubtle {
@@ -179,7 +176,7 @@ func verifyAction(ctx *cli.Context) error {
 	if !ctx.Bool("insecure") {
 		options = append(options, jose.WithNoDefaults(true))
 	}
-	if passwordFile := ctx.String("password-file"); len(passwordFile) > 0 {
+	if passwordFile := ctx.String("password-file"); passwordFile != "" {
 		options = append(options, jose.WithPasswordFile(passwordFile))
 	}
 
@@ -271,12 +268,10 @@ func validateClaimsWithLeeway(ctx *cli.Context, c jose.Claims, e jose.Expected, 
 		ers = append(ers, "invalid ID claim (jti)")
 	}
 
-	if len(e.Audience) != 0 {
-		for _, v := range e.Audience {
-			if !c.Audience.Contains(v) {
-				ers = append(ers, "invalid audience claim (aud)")
-				break
-			}
+	for _, v := range e.Audience {
+		if !c.Audience.Contains(v) {
+			ers = append(ers, "invalid audience claim (aud)")
+			break
 		}
 	}
 

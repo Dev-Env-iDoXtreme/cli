@@ -26,18 +26,18 @@ import (
 	"github.com/pkg/errors"
 	"github.com/urfave/cli"
 
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/ui"
+	"github.com/smallstep/certificates/acme"
+	acmeAPI "github.com/smallstep/certificates/acme/api"
+	"github.com/smallstep/certificates/ca"
+	"github.com/smallstep/certificates/pki"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/ui"
 	"go.step.sm/crypto/jose"
 	"go.step.sm/crypto/keyutil"
 	"go.step.sm/crypto/pemutil"
 	"go.step.sm/crypto/tpm"
 	tpmstorage "go.step.sm/crypto/tpm/storage"
 
-	"github.com/smallstep/certificates/acme"
-	acmeAPI "github.com/smallstep/certificates/acme/api"
-	"github.com/smallstep/certificates/ca"
-	"github.com/smallstep/certificates/pki"
 	"github.com/smallstep/cli/flags"
 	"github.com/smallstep/cli/internal/cryptoutil"
 	"github.com/smallstep/cli/utils"
@@ -49,7 +49,7 @@ func startHTTPServer(addr, token, keyAuth string) *http.Server {
 		ReadHeaderTimeout: 15 * time.Second,
 	}
 
-	http.HandleFunc(fmt.Sprintf("/.well-known/acme-challenge/%s", token), func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc(fmt.Sprintf("/.well-known/acme-challenge/%s", token), func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Write([]byte(keyAuth))
 	})
@@ -629,7 +629,7 @@ func newACMEFlow(ctx *cli.Context, ops ...acmeFlowOp) (*acmeFlow, error) {
 	// One of --standalone or --webroot must be selected for use with ACME protocol.
 	isStandalone, webroot := ctx.Bool("standalone"), ctx.String("webroot")
 	switch {
-	case isStandalone && len(webroot) > 0:
+	case isStandalone && webroot != "":
 		return nil, errs.MutuallyExclusiveFlags(ctx, "standalone", "webroot")
 	case !isStandalone && webroot == "":
 		if err := ctx.Set("standalone", "true"); err != nil {
@@ -674,7 +674,7 @@ func (af *acmeFlow) getClientTruststoreOption(mergeRootCAs bool) (ca.ClientOptio
 	}
 
 	// 1. Merge local RootCA with system store
-	if mergeRootCAs && len(root) > 0 {
+	if mergeRootCAs && root != "" {
 		rootCAs, err := x509.SystemCertPool()
 		if err != nil || rootCAs == nil {
 			rootCAs = x509.NewCertPool()
@@ -698,7 +698,7 @@ func (af *acmeFlow) getClientTruststoreOption(mergeRootCAs bool) (ca.ClientOptio
 	}
 
 	// Use local Root CA only
-	if len(root) > 0 {
+	if root != "" {
 		return ca.WithRootFile(root), nil
 	}
 
@@ -830,15 +830,26 @@ func (af *acmeFlow) GetCertificate() ([]*x509.Certificate, error) {
 	// TODO: refactor this to be cleaner by passing the TPM and/or key around
 	// instead of creating a new instance.
 	if af.tpmSigner != nil {
+		attestationURI := af.ctx.String("attestation-uri")
 		tpmStorageDirectory := af.ctx.String("tpm-storage-directory")
-		t, err := tpm.New(tpm.WithStore(tpmstorage.NewDirstore(tpmStorageDirectory)))
-		if err != nil {
-			return nil, fmt.Errorf("failed initializing TPM: %w", err)
-		}
-		keyName, err := parseTPMAttestationURI(af.ctx.String("attestation-uri"))
+
+		keyName, attURI, err := parseTPMAttestationURI(attestationURI)
 		if err != nil {
 			return nil, fmt.Errorf("failed parsing --attestation-uri: %w", err)
 		}
+
+		tpmOpts := []tpm.NewTPMOption{
+			tpm.WithStore(tpmstorage.NewDirstore(tpmStorageDirectory)),
+		}
+		if device := attURI.Get("device"); device != "" {
+			tpmOpts = append(tpmOpts, tpm.WithDeviceName(device))
+		}
+
+		t, err := tpm.New(tpmOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed initializing TPM: %w", err)
+		}
+
 		ctx := tpm.NewContext(context.Background(), t)
 		key, err := t.GetKey(ctx, keyName)
 		if err != nil {

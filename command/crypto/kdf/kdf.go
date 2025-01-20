@@ -4,10 +4,13 @@ import (
 	"fmt"
 
 	"github.com/pkg/errors"
+	"github.com/urfave/cli"
+
+	"github.com/smallstep/cli-utils/errs"
+
+	"github.com/smallstep/cli/flags"
 	"github.com/smallstep/cli/internal/kdf"
 	"github.com/smallstep/cli/utils"
-	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/errs"
 )
 
 // Command returns the cli.Command for kdf and related subcommands.
@@ -149,10 +152,7 @@ appear in places you might not expect. If omitted input is read from STDIN.`,
 		: A password-based KDF optimized to resist GPU and side-channel attacks.
 `,
 			},
-			cli.BoolFlag{
-				Name:   "insecure",
-				Hidden: true,
-			},
+			flags.InsecureHidden,
 		},
 	}
 }

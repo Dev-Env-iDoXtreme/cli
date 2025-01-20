@@ -14,19 +14,20 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/urfave/cli"
+
 	"github.com/smallstep/certificates/authority/provisioner"
 	"github.com/smallstep/certificates/pki"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/ui"
+	"go.step.sm/crypto/jose"
+	"go.step.sm/crypto/pemutil"
+	"go.step.sm/crypto/randutil"
+
 	"github.com/smallstep/cli/exec"
 	"github.com/smallstep/cli/internal/cryptoutil"
 	"github.com/smallstep/cli/token"
 	"github.com/smallstep/cli/token/provision"
-	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/ui"
-	"go.step.sm/crypto/jose"
-	"go.step.sm/crypto/pemutil"
-	"go.step.sm/crypto/randutil"
-	"go.step.sm/crypto/x25519"
 )
 
 // TokenGenerator is a helper used to generate different types of tokens used in
@@ -65,7 +66,7 @@ func (t *TokenGenerator) Token(sub string, opts ...token.Options) (string, error
 		token.WithIssuer(t.iss),
 		token.WithAudience(t.aud),
 	}
-	if len(t.root) > 0 {
+	if t.root != "" {
 		tokOptions = append(tokOptions, token.WithRootCA(t.root))
 	}
 
@@ -99,6 +100,14 @@ func (t *TokenGenerator) SignToken(sub string, sans []string, opts ...token.Opti
 		sans = []string{sub}
 	}
 	opts = append(opts, token.WithSANS(sans))
+
+	// Tie certificate request to the token used in the JWK and X5C provisioners
+	if sharedContext.CertificateRequest != nil {
+		opts = append(opts, token.WithFingerprint(sharedContext.CertificateRequest))
+	} else if sharedContext.ConfirmationFingerprint != "" {
+		opts = append(opts, token.WithConfirmationFingerprint(sharedContext.ConfirmationFingerprint))
+	}
+
 	return t.Token(sub, opts...)
 }
 
@@ -116,6 +125,7 @@ func (t *TokenGenerator) SignSSHToken(sub, certType string, principals []string,
 		ValidAfter:  notBefore,
 		ValidBefore: notAfter,
 	})}, opts...)
+
 	return t.Token(sub, opts...)
 }
 
@@ -125,6 +135,16 @@ func generateOIDCToken(ctx *cli.Context, p *provisioner.OIDC) (string, error) {
 	args := []string{"oauth", "--oidc", "--bare",
 		"--provider", p.ConfigurationEndpoint,
 		"--client-id", p.ClientID, "--client-secret", p.ClientSecret}
+	if len(p.Scopes) != 0 {
+		for _, keyval := range p.Scopes {
+			args = append(args, "--scope", keyval)
+		}
+	}
+	if len(p.AuthParams) != 0 {
+		for _, keyval := range p.AuthParams {
+			args = append(args, "--auth-param", keyval)
+		}
+	}
 	if ctx.Bool("console") {
 		args = append(args, "--console")
 	}
@@ -133,7 +153,7 @@ func generateOIDCToken(ctx *cli.Context, p *provisioner.OIDC) (string, error) {
 	}
 	out, err := exec.Step(args...)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf(`error generating OIDC token: exec "step oauth" failed`)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -259,17 +279,7 @@ func generateNebulaToken(ctx *cli.Context, p *provisioner.Nebula, tokType int, t
 		return "", err
 	}
 
-	var key []byte
-	switch k := jwk.Key.(type) {
-	case x25519.PrivateKey:
-		key = []byte(k)
-	case ed25519.PrivateKey:
-		key = []byte(k)
-	case []byte:
-		key = k
-	default:
-		return "", errors.Errorf("error reading %s: content is not a valid nebula key", keyFile)
-	}
+	key := jwk.Key
 
 	tokenGen := NewTokenGenerator(jwk.KeyID, p.Name,
 		fmt.Sprintf("%s#%s", tokAttrs.audience, p.GetIDForToken()), tokAttrs.root,
@@ -407,7 +417,7 @@ func loadJWK(ctx *cli.Context, p *provisioner.JWK, tokAttrs tokenAttrs) (jwk *jo
 		switch {
 		case p != nil:
 			kid = p.Key.KeyID
-		case len(tokAttrs.kid) > 0:
+		case tokAttrs.kid != "":
 			kid = tokAttrs.kid
 		default:
 			if kid, err = jose.Thumbprint(jwk); err != nil {

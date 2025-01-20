@@ -7,13 +7,15 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/urfave/cli"
+
 	"github.com/smallstep/certificates/authority/provisioner"
 	"github.com/smallstep/certificates/pki"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/ui"
+
 	"github.com/smallstep/cli/flags"
 	"github.com/smallstep/cli/utils"
-	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/ui"
 )
 
 type provisionersSelect struct {
@@ -85,7 +87,12 @@ func (e *ACMETokenError) Error() string {
 }
 
 // NewTokenFlow implements the common flow used to generate a token
-func NewTokenFlow(ctx *cli.Context, tokType int, subject string, sans []string, caURL, root string, notBefore, notAfter time.Time, certNotBefore, certNotAfter provisioner.TimeDuration) (string, error) {
+func NewTokenFlow(ctx *cli.Context, tokType int, subject string, sans []string, caURL, root string, notBefore, notAfter time.Time, certNotBefore, certNotAfter provisioner.TimeDuration, opts ...Option) (string, error) {
+	// Apply options to shared context
+	for _, opt := range opts {
+		opt.apply(&sharedContext)
+	}
+
 	// Get audience from ca-url
 	audience, err := parseAudience(ctx, tokType)
 	if err != nil {

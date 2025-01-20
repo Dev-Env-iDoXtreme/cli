@@ -4,12 +4,13 @@ import (
 	"context"
 
 	"github.com/pkg/errors"
+
 	"github.com/smallstep/certificates/authority"
 	"github.com/smallstep/certificates/authority/config"
 	"github.com/smallstep/certificates/authority/provisioner"
 	"github.com/smallstep/certificates/ca"
-	"go.step.sm/cli-utils/ui"
-	"go.step.sm/linkedca"
+	"github.com/smallstep/cli-utils/ui"
+	"github.com/smallstep/linkedca"
 )
 
 // nodb implements the certificates/Adminclient interface with noops.
@@ -92,8 +93,8 @@ func newCaConfigClient(ctx context.Context, cfg *config.Config, cfgFile string) 
 		}
 	}
 	a, err := authority.New(cfg, authority.WithAdminDB(newNoDB()),
-		//nolint:staticcheck // TODO: WithProvisioners has been deprecated, temporarily do not lint this line.
-		authority.WithSkipInit(), authority.WithProvisioners(provClxn))
+		authority.WithSkipInit(), authority.WithProvisioners(provClxn)) //nolint:staticcheck // TODO: WithProvisioners has been deprecated, temporarily do not lint this line.
+
 	if err != nil {
 		return nil, errors.Wrapf(err, "error loading authority")
 	}

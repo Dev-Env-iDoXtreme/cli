@@ -1,12 +1,14 @@
 package ca
 
 import (
+	"github.com/urfave/cli"
+
+	"github.com/smallstep/cli-utils/command"
+
 	"github.com/smallstep/cli/command/ca/acme"
 	"github.com/smallstep/cli/command/ca/admin"
 	"github.com/smallstep/cli/command/ca/policy"
 	"github.com/smallstep/cli/command/ca/provisioner"
-	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/command"
 )
 
 // init creates and registers the ca command
@@ -135,11 +137,6 @@ mode for serving challenge validation requests.`,
 Webroot is a mode in which the step process will write a challenge file to a
 location being served by an existing fileserver in order to respond to ACME
 challenge validation requests.`,
-	}
-
-	consoleFlag = cli.BoolFlag{
-		Name:  "console",
-		Usage: "Complete the flow while remaining inside the terminal",
 	}
 
 	fingerprintFlag = cli.StringFlag{

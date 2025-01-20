@@ -8,19 +8,21 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
+	"github.com/urfave/cli"
+
 	"github.com/smallstep/certificates/api"
 	"github.com/smallstep/certificates/authority/provisioner"
 	"github.com/smallstep/certificates/ca"
 	"github.com/smallstep/certificates/templates"
+	"github.com/smallstep/cli-utils/command"
+	"github.com/smallstep/cli-utils/errs"
+	"github.com/smallstep/cli-utils/step"
+	"github.com/smallstep/cli-utils/ui"
+	"golang.org/x/crypto/ssh"
+
 	"github.com/smallstep/cli/flags"
 	"github.com/smallstep/cli/internal/sshutil"
 	"github.com/smallstep/cli/utils/cautils"
-	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/command"
-	"go.step.sm/cli-utils/errs"
-	"go.step.sm/cli-utils/step"
-	"go.step.sm/cli-utils/ui"
-	"golang.org/x/crypto/ssh"
 )
 
 func configCommand() cli.Command {
@@ -31,7 +33,7 @@ func configCommand() cli.Command {
 		UsageText: `**step ssh config**
 [**--team**=<name>] [**--team-authority**=<sub-domain>] [**--host**]
 [**--set**=<key=value>] [**--set-file**=<file>] [**--dry-run**] [**--roots**]
-[**--federation**] [**--force**] [**--offline**] [**--ca-config**=<file>]
+[**--federation**] [**--console**] [**--force**] [**--offline**] [**--ca-config**=<file>]
 [**--ca-url**=<uri>] [**--root**=<file>] [**--context**=<name>]
 [**--authority**=<name>] [**--profile**=<name>]`,
 		Description: `**step ssh config** configures SSH to be used with certificates. It also supports
@@ -89,6 +91,7 @@ user or host certificates`,
 times to set multiple variables.`,
 			},
 			flags.TemplateSetFile,
+			flags.Console,
 			flags.DryRun,
 			flags.Force,
 			flags.CaConfig,
@@ -203,6 +206,9 @@ func configAction(ctx *cli.Context) (recoverErr error) {
 	data[templates.SSHTemplateVersionKey] = "v2"
 	if step.Contexts().Enabled() {
 		data["Context"] = step.Contexts().GetCurrent().Name
+	}
+	if ctx.Bool("console") {
+		data["Console"] = "true"
 	}
 	if len(sets) > 0 {
 		for _, s := range sets {

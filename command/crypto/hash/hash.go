@@ -19,7 +19,10 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/errs"
+
+	"github.com/smallstep/cli-utils/errs"
+
+	"github.com/smallstep/cli/flags"
 )
 
 type hashConstructor func() hash.Hash
@@ -127,10 +130,7 @@ For examples, see **step help crypto hash**.
 		:  MD5 produces a 128-bit hash value
 `,
 			},
-			cli.BoolFlag{
-				Name:   "insecure",
-				Hidden: true,
-			},
+			flags.InsecureHidden,
 		},
 	}
 }
@@ -187,10 +187,7 @@ For examples, see **step help crypto hash**.
 		:  MD5 produces a 128-bit hash value
 `,
 			},
-			cli.BoolFlag{
-				Name:   "insecure",
-				Hidden: true,
-			},
+			flags.InsecureHidden,
 		},
 	}
 }

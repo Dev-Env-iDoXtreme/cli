@@ -1,14 +1,17 @@
 package ca
 
 import (
+	"context"
 	"fmt"
 	"os"
 
+	"github.com/urfave/cli"
+
 	"github.com/smallstep/certificates/ca"
 	"github.com/smallstep/certificates/pki"
+	"github.com/smallstep/cli-utils/errs"
+
 	"github.com/smallstep/cli/flags"
-	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/errs"
 )
 
 func healthCommand() cli.Command {
@@ -73,11 +76,11 @@ func healthAction(ctx *cli.Context) error {
 	var options []ca.ClientOption
 	options = append(options, ca.WithRootFile(root))
 
-	client, err := ca.NewClient(caURL, options...)
+	caClient, err := ca.NewClient(caURL, options...)
 	if err != nil {
 		return err
 	}
-	r, err := client.Health()
+	r, err := caClient.HealthWithContext(context.Background())
 	if err != nil {
 		return err
 	}

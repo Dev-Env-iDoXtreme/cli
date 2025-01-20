@@ -1,6 +1,10 @@
 package crypto
 
 import (
+	"github.com/urfave/cli"
+
+	"github.com/smallstep/cli-utils/command"
+
 	"github.com/smallstep/cli/command/crypto/hash"
 	"github.com/smallstep/cli/command/crypto/jose"
 	"github.com/smallstep/cli/command/crypto/jwe"
@@ -11,9 +15,8 @@ import (
 	"github.com/smallstep/cli/command/crypto/key"
 	"github.com/smallstep/cli/command/crypto/nacl"
 	"github.com/smallstep/cli/command/crypto/otp"
+	"github.com/smallstep/cli/command/crypto/rand"
 	"github.com/smallstep/cli/command/crypto/winpe"
-	"github.com/urfave/cli"
-	"go.step.sm/cli-utils/command"
 )
 
 func init() {
@@ -167,6 +170,7 @@ risks. That said, many of these factors are beyond the scope of this tool.
 			key.Command(),
 			nacl.Command(),
 			otp.Command(),
+			rand.Command(),
 			winpe.Command(),
 		},
 	}
